@@ -1,12 +1,13 @@
 import flet as ft
 
 from ui.views.todo_view import TodoApp
+from ui.theme import get_app_theme
 
 
 def main(page: ft.Page):
     page.title = "Cleaner"
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
-    page.scroll = ft.ScrollMode.ADAPTIVE
+    page.theme = get_app_theme()
     page.padding = ft.Padding.symmetric(horizontal=12, vertical=16)
     page.add(
         ft.SafeArea(

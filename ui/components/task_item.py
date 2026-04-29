@@ -1,5 +1,7 @@
 import flet as ft
-from datetime import datetime
+from datetime import datetime, date
+
+from ui.theme import AppColors
 
 
 class Task(ft.Column):
@@ -14,21 +16,57 @@ class Task(ft.Column):
         self.completed = completed
         self.task_delete = task_delete
 
+    def _get_date_display(self):
+        today = datetime.now().date()
+        if self.date > today:
+            days_ahead = (self.date - today).days
+            if days_ahead == 1:
+                date_text = "📅 明天"
+            elif days_ahead == 2:
+                date_text = "📅 后天"
+            else:
+                date_text = f"📅 {self.date.strftime('%m-%d')}"
+            return date_text, AppColors.DATE_FUTURE, 14
+        elif self.date == today:
+            return "📅 今天", AppColors.DATE_TODAY, 14
+        else:
+            return f"📅 {self.date.strftime('%m-%d')}", AppColors.DATE_PAST, 12
+
     def build(self):
         self.display_task = ft.Checkbox(
             value=False, label=self.task_name, on_change=self.status_changed
         )
         self.edit_name = ft.TextField(expand=1)
+        date_text, date_color, date_size = self._get_date_display()
 
         self.display_view = ft.Row(
+            expand=True,
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.START,
             controls=[
-                ft.Column(
-                    [
-                        ft.Text(self.task_name, size=16),
-                        ft.Text(f"Date: {self.date}", size=12, color=ft.Colors.GREY),
-                    ]
+                ft.Container(
+                    expand=True,
+                    padding=ft.Padding.only(right=8),
+                    content=ft.Column(
+                        spacing=2,
+                        tight=True,
+                        controls=[
+                            ft.Text(
+                                self.task_name,
+                                size=16,
+                                weight=ft.FontWeight.W_500,
+                                font_family="Microsoft YaHei",
+                                no_wrap=False,
+                                overflow=ft.TextOverflow.VISIBLE,
+                            ),
+                            ft.Text(
+                                date_text,
+                                size=date_size,
+                                color=date_color,
+                                font_family="Microsoft YaHei",
+                            ),
+                        ],
+                    ),
                 ),
                 ft.Checkbox(value=self.completed, on_change=self.status_changed),
                 ft.Row(
@@ -57,7 +95,7 @@ class Task(ft.Column):
                 self.edit_name,
                 ft.IconButton(
                     icon=ft.Icons.DONE_OUTLINE_OUTLINED,
-                    icon_color=ft.Colors.GREEN,
+                    icon_color=AppColors.EDIT_CONFIRM_ICON,
                     tooltip="Update To-Do",
                     on_click=self.save_clicked,
                 ),
