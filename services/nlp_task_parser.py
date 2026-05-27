@@ -15,6 +15,7 @@ class ParsedTaskIntent:
     target_text: str | None = None
     new_text: str | None = None
     task_date: date | None = None
+    end_date: date | None = None
     completed: bool | None = None
     status: str = "all"
     keyword: str | None = None
@@ -49,6 +50,7 @@ _LIST_KEYWORDS = (
 )
 _COMPLETE_KEYWORDS = ("完成", "标记完成", "设为完成", "已完成", "勾选")
 _UNCOMPLETE_KEYWORDS = ("未完成", "取消完成", "设为未完成", "取消勾选")
+_PLAN_KEYWORDS = ("规划", "安排", "计划", "应该做什么", "接下来", "优先", "建议")
 _CREATE_PREFIX_PATTERN = re.compile(
     r"^(?:(?:今天|明天|后天|本周|下周|接下来\d+天|接下来\d+日|接下来)(?:\s*)?)?"
     r"(?:帮我|请|麻烦)?(?:\s*)?"
@@ -110,6 +112,42 @@ def _contains_date_signal(text: str) -> bool:
     ):
         return True
     return bool(re.search(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}", text))
+
+
+def _parse_duration(text: str) -> tuple[date | None, date | None]:
+    """解析持续时间模式，返回 (start_date, end_date)。"""
+    # 模式1: 从X到Y / 从X持续到Y
+    range_match = re.search(
+        r"从\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}|今天|明天|后天)"
+        r".*?(?:到|至)\s*"
+        r"(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}|今天|明天|后天)",
+        text,
+    )
+    if range_match:
+        start = _parse_date(range_match.group(1))
+        end = _parse_date(range_match.group(2))
+        return start, end
+
+    # 模式2: X到Y（无"从"字）
+    range_match2 = re.search(
+        r"(\d{4}[-/]\d{1,2}[-/]\d{1,2})\s*(?:到|至|-)\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})",
+        text,
+    )
+    if range_match2:
+        start = _parse_date(range_match2.group(1))
+        end = _parse_date(range_match2.group(2))
+        return start, end
+
+    # 模式3: 持续X天（基于已解析的开始日期）
+    duration_match = re.search(r"持续\s*(\d+)\s*天", text)
+    if duration_match:
+        days = int(duration_match.group(1))
+        start = _parse_date(text)
+        if start:
+            end = date.fromordinal(start.toordinal() + days)
+            return start, end
+
+    return None, None
 
 
 def _parse_date(text: str) -> date | None:
@@ -342,6 +380,13 @@ def parse_task_intent(text: str) -> ParsedTaskIntent:
             confidence=0.82,
         )
 
+    if any(keyword in body for keyword in _PLAN_KEYWORDS):
+        return ParsedTaskIntent(
+            action=TaskActionType.PLAN,
+            raw_text=text,
+            confidence=0.85,
+        )
+
     if any(keyword in body for keyword in _LIST_KEYWORDS):
         status = "all"
         if "未完成" in body or "待办" in body or "active" in body:
@@ -362,11 +407,15 @@ def parse_task_intent(text: str) -> ParsedTaskIntent:
         if task_name is None:
             task_name = _extract_create_name(body)
         task_name = re.sub(r"\d+\s*(?:条|个|项|件)", "", task_name or "").strip()
+        start_date, end_date = _parse_duration(body)
+        if start_date is None and _contains_date_signal(body):
+            start_date = _parse_date(body)
         return ParsedTaskIntent(
             action=TaskActionType.CREATE,
             raw_text=text,
             task_name=task_name or None,
-            task_date=_parse_date(body) if _contains_date_signal(body) else None,
+            task_date=start_date,
+            end_date=end_date,
             batch_count=count,
             confidence=0.9,
         )

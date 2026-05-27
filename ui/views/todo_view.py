@@ -1,3 +1,8 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import date, datetime, timedelta
+
 import flet as ft
 
 from core.constants.enums import TaskActionType
@@ -5,23 +10,27 @@ from core.models.task import TaskRecord
 from services.llm_service import LLMService
 from services.task_service import TaskService
 from ui.components.task_item import Task
-from ui.theme import AppColors
+from ui.theme import AppColors, ThemeManager
 
 
 class TodoApp(ft.Column):
-    def __init__(self):
+    def __init__(self, theme_manager: ThemeManager, repo=None):
         super().__init__()
+        self.tm = theme_manager
         self.show_settings = False
         self.task_service = TaskService()
-        self.llm_service = LLMService(self.task_service)
+        self.llm_service = LLMService(self.task_service, setting_repo=repo)
         self.pending_confirmation_token = None
         self.undo_stack: list[list[TaskRecord]] = []
         self._restoring = False
-        self.tasks = ft.Column(expand=True, spacing=8)
-        self._panel_min_width = 320
-        self._splitter_width = 12
-        self._left_panel_width = 520
+        self.tasks = ft.ReorderableListView(
+            expand=True,
+            spacing=6,
+            on_reorder=self._on_task_reorder,
+        )
         self.load_tasks()
+
+    # ── 数据操作 ──────────────────────────────────────────
 
     def load_tasks(self):
         self.tasks.controls.clear()
@@ -32,30 +41,34 @@ class TodoApp(ft.Column):
                 self,
                 record.id,
                 record.date,
+                record.end_date,
+                record.description,
                 record.completed,
             )
+            task.key = str(record.id) if record.id else str(id(task))
             self.tasks.controls.append(task)
 
     def save_task(self, task):
         if task.task_id is not None:
             self.push_undo_snapshot()
 
-        record = TaskRecord(
-            id=task.task_id,
-            name=task.task_name,
-            date=task.date,
-            completed=task.completed,
-        )
-        if record.id is None:
+        if task.task_id is None:
             saved = self.task_service.create_task(
-                record.name, record.date, record.completed
+                task.task_name,
+                task.date,
+                task.completed,
+                end_date=task.end_date,
+                description=task.description,
             )
         else:
             saved = self.task_service.update_task(
-                record.id,
-                name=record.name,
-                task_date=record.date,
-                completed=record.completed,
+                task.task_id,
+                name=task.task_name,
+                task_date=task.date,
+                end_date=task.end_date,
+                clear_end_date=(task.end_date is None),
+                description=task.description,
+                completed=task.completed,
             )
         task.task_id = saved.id
 
@@ -63,269 +76,507 @@ class TodoApp(ft.Column):
         if task.task_id:
             self.task_service.delete_task(task.task_id)
 
+    # ── 页面切换 ──────────────────────────────────────────
+
+    async def _close_window(self, e):
+        await e.page.window.close()
+
     def open_settings(self, e):
-        self.show_settings = True
-        self.main_view.visible = False
-        self.settings_view.visible = True
+        # 关闭聊天助手（互斥）
+        if self._drawer_open:
+            self._drawer.visible = False
+            self._drawer_open = False
+            self._sidebar_chat.icon_color = None
+        # 切换设置
+        self.show_settings = not self.show_settings
+        self.main_view.visible = not self.show_settings
+        self.settings_view.visible = self.show_settings
         self.update()
 
-    def close_settings(self, e):
-        self.show_settings = False
-        self.settings_view.visible = False
-        self.main_view.visible = True
+    _DRAWER_WIDTH = 400
+
+    async def _toggle_chat_drawer(self, e):
+        if self._drawer_open:
+            self._drawer.opacity = 0
+            self._content_column.opacity = 0.5
+            self.update()
+            await asyncio.sleep(0.3)
+            self._drawer.visible = False
+            self._drawer_open = False
+            self._sidebar_chat.icon_color = None
+            self._content_column.opacity = 1
+        else:
+            # 关闭设置（互斥）
+            if self.show_settings:
+                self.show_settings = False
+                self.main_view.visible = True
+                self.settings_view.visible = False
+            self._content_column.opacity = 0.5
+            self._drawer.visible = True
+            self._drawer.opacity = 0
+            self._drawer_open = True
+            self._sidebar_chat.icon_color = ft.Colors.PRIMARY
+            self.update()
+            await asyncio.sleep(0.05)
+            self._drawer.opacity = 1
+            self._content_column.opacity = 1
         self.update()
+
+    # ── 构建 UI ──────────────────────────────────────────
 
     def build(self):
-        self.chat_history = ft.ListView(expand=True, spacing=8, auto_scroll=True)
+        # ── 聊天抽屉内容 ──
+        self.chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
         self.command_input = ft.TextField(
             hint_text="输入内容可聊天，也可执行任务指令",
             expand=True,
+            border_radius=20,
+            content_padding=ft.Padding(16, 10, 16, 10),
             on_submit=self.handle_user_message,
         )
-
-        self.ai_result = ft.Text(value="", color=AppColors.TEXT_HINT, font_family="Microsoft YaHei")
-        self.ai_confirm_button = ft.OutlinedButton(
-            content="确认删除",
-            height=42,
+        self.ai_confirm_button = ft.FilledButton(
+            content=ft.Text("确认删除"),
             visible=False,
+            bgcolor=ft.Colors.ERROR,
+            color=ft.Colors.ON_ERROR,
             on_click=self.confirm_pending_delete,
         )
 
-        self.new_task = ft.TextField(
-            hint_text="What needs to be done?", on_submit=self.add_clicked, expand=True
+        chat_input_row = ft.Row(
+            spacing=8,
+            controls=[
+                self.command_input,
+                ft.IconButton(
+                    icon=ft.Icons.SEND_ROUNDED,
+                    bgcolor=ft.Colors.PRIMARY_CONTAINER,
+                    icon_color=ft.Colors.ON_PRIMARY_CONTAINER,
+                    on_click=self.handle_user_message,
+                ),
+            ],
         )
 
-        self._filter_labels = ["all", "active", "completed"]
-        self._current_filter = "all"
-        self._filter_buttons = [
-            ft.TextButton(
-                content=label,
-                on_click=lambda _, l=label: self._set_filter(l),
-                style=ft.ButtonStyle(padding=ft.Padding.symmetric(horizontal=8, vertical=4)),
-            )
-            for label in self._filter_labels
-        ]
-        self.filter_row = ft.Row(controls=self._filter_buttons, spacing=0)
-
-        self.items_left = ft.Text("0 items left", font_family="Microsoft YaHei")
-
-        self.left_panel = ft.Container(
-            padding=16,
-            border_radius=12,
-            bgcolor=AppColors.PANEL_BG,
-            content=ft.ListView(
+        # 自定义抽屉面板
+        self._drawer = ft.Container(
+            width=self._DRAWER_WIDTH,
+            visible=False,
+            bgcolor=ft.Colors.SURFACE,
+            border_radius=ft.BorderRadius(12, 4, 4, 12),
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=16,
+                color=ft.Colors.with_opacity(0.25, ft.Colors.BLACK),
+                offset=ft.Offset(4, 0),
+            ),
+            animate_opacity=300,
+            padding=ft.Padding(16, 12, 16, 16),
+            content=ft.Column(
                 expand=True,
-                spacing=12,
-                auto_scroll=False,
+                spacing=10,
                 controls=[
-                    ft.Text("智能助手对话", theme_style=ft.TextThemeStyle.TITLE_MEDIUM, font_family="Microsoft YaHei"),
-                    ft.Container(
-                        height=220,
-                        border_radius=10,
-                        padding=10,
-                        bgcolor=AppColors.CHAT_INPUT_BG,
-                        content=self.chat_history,
-                    ),
-                    ft.ResponsiveRow(
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         controls=[
-                            ft.Container(
-                                content=self.command_input, col={"xs": 12, "md": 8}
+                            ft.Text(
+                                "智能助手",
+                                weight=ft.FontWeight.W_600,
+                                size=16,
                             ),
-                            ft.Container(
-                                content=ft.FilledButton(
-                                    content="发送",
-                                    height=42,
-                                    on_click=self.handle_user_message,
-                                ),
-                                col={"xs": 6, "md": 2},
-                            ),
-                            ft.Container(
-                                content=self.ai_confirm_button,
-                                col={"xs": 6, "md": 2},
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE,
+                                icon_size=20,
+                                on_click=self._toggle_chat_drawer,
                             ),
                         ],
-                        columns=12,
-                        run_spacing=8,
                     ),
-                    self.ai_result,
+                    ft.Container(
+                        expand=True,
+                        border_radius=12,
+                        bgcolor=AppColors.PANEL_BG,
+                        padding=10,
+                        content=self.chat_history,
+                    ),
+                    self.ai_confirm_button,
+                    ft.Container(
+                        padding=ft.Padding(0, 8, 0, 0),
+                        content=chat_input_row,
+                    ),
                 ],
             ),
         )
 
-        self.right_panel = ft.Container(
-            padding=16,
+        # ── 任务输入区 ──
+        self.new_task = ft.TextField(
+            hint_text="添加新任务",
+            on_submit=self.add_clicked,
+            expand=True,
+            border_radius=10,
+            content_padding=ft.Padding(16, 12, 16, 12),
+        )
+
+        # ── 新任务日期选择器（自定义，自动范围） ──
+        from ui.components.date_picker import CustomDatePicker
+        self._new_task_date_label = ft.Text(
+            "",
+            size=11,
+            color=AppColors.TEXT_HINT,
+            visible=False,
+        )
+        self._new_task_picker = CustomDatePicker(
+            selected=date.today(),
+            on_change=self._on_new_task_date_picked,
+            show_time=True,
+        )
+        self._new_task_picker_panel = ft.Container(
+            visible=False,
+            padding=ft.Padding(0, 4, 0, 4),
+            animate_opacity=250,
+            animate_size=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            content=self._new_task_picker,
+        )
+
+        # ── 筛选按钮 ──
+        self._filter_labels = ["all", "active", "completed", "expired"]
+        self._filter_display = {
+            "all": "全部",
+            "active": "未完成",
+            "completed": "已完成",
+            "expired": "已过期",
+        }
+        self._current_filter = "all"
+        self.filter_row = ft.Row(
+            spacing=4,
+            controls=[
+                ft.Chip(
+                    label=ft.Text(self._filter_display[label]),
+                    data=label,
+                    selected=(label == self._current_filter),
+                    on_select=lambda e, l=label: self._set_filter(l),
+                )
+                for label in self._filter_labels
+            ],
+        )
+
+        # ── 排序 ──
+        self._sort_mode = "date_desc"
+        self._sort_options = {
+            "date_desc": "日期 ↓",
+            "date_asc": "日期 ↑",
+            "name_asc": "名称 A-Z",
+            "name_desc": "名称 Z-A",
+            "duration_desc": "持续时间 ↓",
+            "duration_asc": "持续时间 ↑",
+        }
+        self._sort_dropdown = ft.Dropdown(
+            value=self._sort_mode,
+            options=[
+                ft.dropdown.Option(key=k, text=v)
+                for k, v in self._sort_options.items()
+            ],
+            text_size=13,
+            content_padding=ft.Padding(8, 4, 8, 4),
+            border_radius=6,
+            width=140,
+            on_select=self._on_sort_change,
+        )
+
+        self.items_left = ft.Text("0 项未完成", size=13, color=AppColors.TEXT_HINT)
+
+        # ── 主任务面板 ──
+        task_panel = ft.Container(
+            expand=True,
             border_radius=12,
+            padding=ft.Padding(16, 12, 16, 12),
             bgcolor=AppColors.PANEL_BG,
-            content=ft.ListView(
+            content=ft.Column(
                 expand=True,
-                spacing=12,
-                auto_scroll=False,
+                spacing=10,
                 controls=[
-                    ft.Text("待办列表", theme_style=ft.TextThemeStyle.TITLE_MEDIUM, font_family="Microsoft YaHei"),
-                    ft.ResponsiveRow(
+                    # 顶部输入行
+                    ft.Row(
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         controls=[
                             ft.Container(
-                                content=self.new_task, col={"xs": 10, "md": 11}
+                                expand=True,
+                                content=self.new_task,
                             ),
-                            ft.Container(
-                                content=ft.FloatingActionButton(
-                                    icon=ft.Icons.ADD, on_click=self.add_clicked
-                                ),
-                                alignment=ft.Alignment(1, 0),
-                                col={"xs": 2, "md": 1},
+                            ft.IconButton(
+                                icon=ft.Icons.CALENDAR_MONTH,
+                                tooltip="设置日期",
+                                icon_size=20,
+                                on_click=self._toggle_new_task_picker,
+                            ),
+                            self._new_task_date_label,
+                            ft.FloatingActionButton(
+                                icon=ft.Icons.ADD,
+                                mini=True,
+                                on_click=self.add_clicked,
                             ),
                         ],
-                        columns=12,
-                        run_spacing=8,
                     ),
-                    self.filter_row,
-                    self.tasks,
+                    # 日期选择面板（展开/收起）
+                    self._new_task_picker_panel,
+                    # 筛选行
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         controls=[
-                            self.items_left,
-                            ft.OutlinedButton(
-                                content="Clear completed",
-                                on_click=self.clear_clicked,
-                            ),
-                            ft.OutlinedButton(
-                                content="Undo",
-                                on_click=self.undo_last,
+                            self.filter_row,
+                            ft.Row(
+                                spacing=8,
+                                controls=[
+                                    self._sort_dropdown,
+                                    ft.TextButton(
+                                        content=ft.Text("清除已完成"),
+                                        on_click=self.clear_clicked,
+                                    ),
+                                    ft.TextButton(
+                                        content=ft.Text("撤销"),
+                                        on_click=self.undo_last,
+                                    ),
+                                ],
                             ),
                         ],
+                    ),
+                    ft.Divider(height=1),
+                    # 任务列表
+                    ft.Container(
+                        expand=True,
+                        content=self.tasks,
+                    ),
+                    # 底部状态栏
+                    self.items_left,
+                ],
+            ),
+        )
+
+        # ── 左侧边栏（VSCode 风格）──
+        self._sidebar_chat = ft.IconButton(
+            icon=ft.Icons.CHAT_BUBBLE_OUTLINE_ROUNDED,
+            icon_size=22,
+            tooltip="智能助手",
+            on_click=self._toggle_chat_drawer,
+        )
+        sidebar = ft.Container(
+            width=48,
+            bgcolor=ft.Colors.SURFACE,
+            padding=ft.Padding(0, 8, 0, 8),
+            content=ft.Column(
+                spacing=4,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Container(expand=True),
+                    self._sidebar_chat,
+                    ft.IconButton(
+                        icon=ft.Icons.CALENDAR_MONTH_OUTLINED,
+                        icon_size=22,
+                        tooltip="日历（即将推出）",
+                        disabled=True,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.SETTINGS_OUTLINED,
+                        icon_size=22,
+                        tooltip="设置",
+                        on_click=self.open_settings,
                     ),
                 ],
             ),
         )
 
-        splitter = ft.GestureDetector(
+        # ── 自定义标题栏（替代原生 Windows 标题栏）──
+        title_bar = ft.WindowDragArea(
             content=ft.Container(
-                width=self._splitter_width,
-                border_radius=999,
-                bgcolor=AppColors.SPLITTER_TRACK,
-                alignment=ft.Alignment(0, 0),
-                content=ft.Container(
-                    width=3,
-                    expand=True,
-                    border_radius=999,
-                    bgcolor=AppColors.SPLITTER_HANDLE,
+                bgcolor=ft.Colors.SURFACE,
+                padding=ft.Padding(12, 6, 6, 6),
+                content=ft.Row(
+                    controls=[
+                        ft.Text(
+                            value="Cleaner",
+                            size=14,
+                            weight=ft.FontWeight.W_600,
+                        ),
+                        ft.Container(expand=True),
+                        ft.IconButton(
+                            icon=ft.Icons.REMOVE_ROUNDED,
+                            icon_size=18,
+                            on_click=lambda e: setattr(
+                                e.page.window, "minimized", True
+                            ),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.CROP_SQUARE_ROUNDED,
+                            icon_size=18,
+                            on_click=lambda e: setattr(
+                                e.page.window,
+                                "maximized",
+                                not e.page.window.maximized,
+                            ),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.CLOSE_ROUNDED,
+                            icon_size=18,
+                            on_click=self._close_window,
+                        ),
+                    ],
                 ),
             ),
-            on_pan_update=self.resize_panels,            mouse_cursor=ft.MouseCursor.RESIZE_LEFT_RIGHT,
         )
 
+        # ── 主视图 ──
         self.main_view = ft.Column(
             expand=True,
-            spacing=16,
+            spacing=12,
             visible=not self.show_settings,
-            controls=[
-                ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.IconButton(
-                            icon=ft.Icons.SETTINGS_OUTLINED,
-                            tooltip="Settings",
-                            on_click=self.open_settings,
-                        ),
-                        ft.Text(
-                            value="TO DO",
-                            theme_style=ft.TextThemeStyle.HEADLINE_MEDIUM,
-                            font_family="Microsoft YaHei",
-                        ),
-                        ft.Container(width=40),
-                    ],
-                ),
-                ft.Row(
-                    expand=True,
-                    spacing=0,
-                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
-                    controls=[
-                        self.left_panel,
-                        splitter,
-                        self.right_panel,
-                    ],
-                ),
-            ],
+            controls=[task_panel],
         )
 
-        self._sync_panel_widths()
+        # ── 设置视图 ──
+        from ui.views.settings_view import SettingsView
 
         self.settings_view = ft.Column(
             expand=True,
-            spacing=16,
+            spacing=12,
             visible=self.show_settings,
-            controls=[
-                ft.Row(
-                    alignment=ft.MainAxisAlignment.START,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.IconButton(
-                            icon=ft.Icons.ARROW_BACK,
-                            tooltip="Back",
-                            on_click=self.close_settings,
-                        ),
-                        ft.Text(
-                            value="Settings",
-                            theme_style=ft.TextThemeStyle.HEADLINE_SMALL,
-                            font_family="Microsoft YaHei",
-                        ),
-                    ],
-                ),
-                ft.ResponsiveRow(
-                    columns=12,
-                    run_spacing=12,
-                    controls=[
-                        ft.Container(
-                            col={"xs": 12, "md": 4},
-                            height=460,
-                            border_radius=12,
-                            padding=16,
-                            bgcolor=ft.Colors.SURFACE,
-                            content=ft.Text("设置列表（预留）", color=AppColors.TEXT_HINT, font_family="Microsoft YaHei"),
-                        ),
-                        ft.Container(
-                            col={"xs": 12, "md": 8},
-                            height=460,
-                            border_radius=12,
-                            padding=16,
-                            bgcolor=ft.Colors.SURFACE,
-                            content=ft.Text(
-                                "具体设置界面（预留）", color=AppColors.TEXT_HINT, font_family="Microsoft YaHei"
-                            ),
-                        ),
-                    ],
-                ),
-            ],
+            controls=[SettingsView(self.tm)],
         )
 
         self.expand = True
         self.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
         self.spacing = 0
-        self.controls = [self.main_view, self.settings_view]
+        self._drawer_open = False
+        self._content_column = ft.Column(
+            expand=True,
+            spacing=12,
+            animate_opacity=200,
+            controls=[
+                self.main_view,
+                self.settings_view,
+            ],
+        )
+        self.controls = [
+            title_bar,
+            ft.Row(
+                expand=True,
+                spacing=0,
+                vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+                controls=[
+                    sidebar,
+                    self._drawer,
+                    self._content_column,
+                ],
+            ),
+        ]
+
+    # ── 生命周期 ──────────────────────────────────────────
+
+    # ── 任务操作 ──────────────────────────────────────────
 
     async def add_clicked(self, e):
         if self.new_task.value:
             self.push_undo_snapshot()
-            task_record = self.task_service.create_task(self.new_task.value)
+            picker = self._new_task_picker
+            task_record = self.task_service.create_task(
+                self.new_task.value,
+                task_date=picker.range_start,
+                end_date=picker.range_end,
+            )
             task = Task(
                 task_record.name,
                 self.task_delete,
                 self,
                 task_record.id,
                 task_record.date,
+                task_record.end_date,
+                task_record.description,
                 task_record.completed,
             )
+            task.key = str(task_record.id)
             self.tasks.controls.append(task)
             self.new_task.value = ""
+            self._new_task_date_label.visible = False
+            self._new_task_picker_panel.visible = False
+            picker.reset()
             await self.new_task.focus()
             self.update()
+
+    async def _toggle_new_task_picker(self, e):
+        panel = self._new_task_picker_panel
+        if panel.visible:
+            # 关闭：先淡出再隐藏
+            panel.opacity = 0
+            self.update()
+            await asyncio.sleep(0.25)
+            panel.visible = False
+        else:
+            # 打开：先显示再淡入
+            panel.visible = True
+            panel.opacity = 0
+            self.update()
+            await asyncio.sleep(0.05)
+            panel.opacity = 1
+        self.update()
+
+    def _on_new_task_date_picked(self, start: datetime, end: datetime | None):
+        self._update_new_task_date_label()
+        self.update()
+
+    def _update_new_task_date_label(self):
+        picker = self._new_task_picker
+        start = picker.range_start
+        end = picker.range_end
+        if start:
+            label = self._format_date_label(start)
+            if end:
+                # 同天持续：只显示一次日期 + 时间范围
+                if start.date() == end.date() and (end.hour or end.minute):
+                    end_label = f"{end.hour:02d}:{end.minute:02d}"
+                    label = f"{label} ~ {end_label}"
+                else:
+                    end_label = self._format_date_label(end)
+                    label = f"{label} ~ {end_label}"
+            self._new_task_date_label.value = label
+            self._new_task_date_label.visible = True
+        else:
+            self._new_task_date_label.visible = False
+
+    @staticmethod
+    def _format_date_label(d) -> str:
+        if isinstance(d, datetime):
+            d_date = d.date()
+            has_time = bool(d.hour or d.minute)
+        else:
+            d_date = d
+            has_time = False
+
+        today = date.today()
+        if d_date == today:
+            label = "今天"
+        elif d_date == today + timedelta(days=1):
+            label = "明天"
+        elif d_date == today + timedelta(days=2):
+            label = "后天"
+        else:
+            label = d_date.strftime("%m-%d")
+
+        if has_time:
+            label += f" {d.hour:02d}:{d.minute:02d}"
+        return label
 
     def task_delete(self, task):
         self.push_undo_snapshot()
         self.tasks.controls.remove(task)
         self.delete_task(task)
+        self.update()
+
+    def _on_task_reorder(self, e):
+        old_index = e.old_index
+        new_index = e.new_index
+        if old_index == new_index:
+            return
+        controls = self.tasks.controls
+        item = controls.pop(old_index)
+        controls.insert(new_index, item)
         self.update()
 
     def clear_clicked(self, e):
@@ -336,74 +587,105 @@ class TodoApp(ft.Column):
                 self.delete_task(task)
         self.update()
 
+    # ── 生命周期 & 状态同步 ──────────────────────────────
+
     def before_update(self):
-        self._sync_panel_widths()
+        if not hasattr(self, "items_left"):
+            return
         self._sync_filter_highlight()
+        self._apply_sort()
         status = self._current_filter
         count = 0
+        expired_count = 0
         for task in self.tasks.controls:
-            task.visible = (
-                status == "all"
-                or (status == "active" and not task.completed)
-                or (status == "completed" and task.completed)
-            )
+            is_expired = task.expired
+            try:
+                task.visible = (
+                    status == "all"
+                    or (status == "active" and not task.completed)
+                    or (status == "completed" and task.completed)
+                    or (status == "expired" and is_expired)
+                )
+            except RuntimeError:
+                pass
             if not task.completed:
                 count += 1
-        self.items_left.value = f"{count} active item(s) left"
-
-    def resize_panels(self, e: ft.DragUpdateEvent):
-        delta_x = e.local_delta.x if e.local_delta else 0
-        if delta_x:
-            self._left_panel_width += delta_x
-            self._sync_panel_widths()
-            self.left_panel.update()
-            self.right_panel.update()
-
-    def _sync_panel_widths(self):
-        page_width = getattr(self.page, "width", None) or 1200
-        available_width = max(
-            2 * self._panel_min_width + self._splitter_width,
-            int(page_width) - 24,
+            if is_expired:
+                expired_count += 1
+        self.items_left.value = f"{count} 项未完成" + (
+            f"，{expired_count} 项已过期" if expired_count else ""
         )
-        max_left = available_width - self._panel_min_width - self._splitter_width
-        self._left_panel_width = max(
-            self._panel_min_width, min(self._left_panel_width, max_left)
-        )
-        right_width = available_width - self._left_panel_width - self._splitter_width
-        self.left_panel.width = self._left_panel_width
-        self.right_panel.width = right_width
 
-    def handle_user_message(self, e):
+    def _apply_sort(self):
+        controls = self.tasks.controls
+        if len(controls) <= 1:
+            return
+        mode = self._sort_mode
+
+        def sort_key(task):
+            if mode == "date_asc":
+                return (task.date, task.task_id or 0)
+            if mode == "date_desc":
+                return (-task.date.toordinal(), -(task.task_id or 0))
+            if mode == "name_asc":
+                return (task.task_name.lower(), task.task_id or 0)
+            if mode == "name_desc":
+                return (task.task_name.lower(), -(task.task_id or 0))
+            if mode == "duration_asc":
+                dur = (task.end_date - task.date).days if task.end_date else 0
+                return (dur, task.task_id or 0)
+            if mode == "duration_desc":
+                dur = (task.end_date - task.date).days if task.end_date else 0
+                return (-dur, -(task.task_id or 0))
+            return (-task.date.toordinal(), -(task.task_id or 0))
+
+        controls.sort(key=sort_key)
+
+    def _on_sort_change(self, e):
+        self._sort_mode = e.control.value
+        self.update()
+
+    # ── 聊天交互 ──────────────────────────────────────────
+
+    async def handle_user_message(self, e):
         text = (self.command_input.value or "").strip()
         if not text:
-            self.ai_result.value = "请输入一句自然语言指令。"
-            self.ai_confirm_button.visible = False
-            self.update()
             return
 
-        self._append_chat_line(f"你: {text}", AppColors.CHAT_USER)
+        await self._append_bubble(text, is_user=True)
+        self.command_input.value = ""
+        self.update()
+
+        # 思考中动画
+        thinking_bubble = self._create_thinking_bubble()
+        self.chat_history.controls.append(thinking_bubble)
+        self.update()
+
+        def _remove_thinking():
+            if thinking_bubble in self.chat_history.controls:
+                self.chat_history.controls.remove(thinking_bubble)
 
         confirm_words = {"确认", "是", "yes", "y", "ok", "好的", "行", "确认删除"}
         cancel_words = {"取消", "不用", "算了", "no", "n"}
         if self.pending_confirmation_token and text.lower() in {
-            word.lower() for word in confirm_words
+            w.lower() for w in confirm_words
         }:
-            self.confirm_pending_delete(e)
-            self.command_input.value = ""
-            self.update()
+            _remove_thinking()
+            await self.confirm_pending_delete(e)
             return
         if self.pending_confirmation_token and text.lower() in {
-            word.lower() for word in cancel_words
+            w.lower() for w in cancel_words
         }:
+            _remove_thinking()
             self.pending_confirmation_token = None
             self.ai_confirm_button.visible = False
-            self.ai_result.value = "已取消删除操作。"
-            self._append_chat_line("助手: 已取消删除操作。", AppColors.CHAT_ASSISTANT)
+            await self._append_bubble("已取消删除操作。", is_user=False)
             self.command_input.value = ""
             self.update()
             return
 
-        planned = self.llm_service.plan(text)
+        # 后台执行 LLM
+        planned = await asyncio.to_thread(self.llm_service.plan, text)
         mutating_actions = {
             TaskActionType.CREATE,
             TaskActionType.UPDATE,
@@ -413,20 +695,39 @@ class TodoApp(ft.Column):
         if planned.action in mutating_actions:
             self.push_undo_snapshot()
 
-        result = self.llm_service.process(
-            text, current_status=self.current_filter_status()
+        result = await asyncio.to_thread(
+            self.llm_service.process,
+            text, current_status=self.current_filter_status(), intent=planned
         )
-        self.ai_result.value = result.message
-        self._append_chat_line(f"助手: {result.message}", AppColors.CHAT_ASSISTANT)
+
+        _remove_thinking()
+        await self._append_bubble(result.message, is_user=False)
         self.ai_confirm_button.visible = result.pending_confirmation
         self.pending_confirmation_token = result.confirmation_token
-        self.command_input.value = ""
         self.load_tasks()
         self.update()
 
-    def confirm_pending_delete(self, e):
+    def _create_thinking_bubble(self) -> ft.Container:
+        return ft.Container(
+            alignment=ft.Alignment(-1.0, 0),
+            padding=ft.Padding(8, 0, 40, 0),
+            content=ft.Container(
+                padding=ft.Padding(14, 10, 14, 10),
+                border_radius=ft.BorderRadius(16, 16, 16, 4),
+                bgcolor=AppColors.BUBBLE_ASSISTANT,
+                content=ft.Row(
+                    spacing=4,
+                    controls=[
+                        ft.ProgressRing(width=14, height=14, stroke_width=2),
+                        ft.Text("思考中", size=13, color=AppColors.TEXT_HINT),
+                    ],
+                ),
+            ),
+        )
+
+    async def confirm_pending_delete(self, e):
         if not self.pending_confirmation_token:
-            self.ai_result.value = "没有待确认的删除操作。"
+            await self._append_bubble("没有待确认的删除操作。", is_user=False)
             self.ai_confirm_button.visible = False
             self.update()
             return
@@ -435,17 +736,37 @@ class TodoApp(ft.Column):
         result = self.llm_service.confirm_delete(self.pending_confirmation_token)
         self.pending_confirmation_token = None
         self.ai_confirm_button.visible = False
-        self.ai_result.value = result.message
-        self._append_chat_line(f"助手: {result.message}", AppColors.CHAT_ASSISTANT)
+        await self._append_bubble(result.message, is_user=False)
         self.load_tasks()
         self.update()
 
-    def _append_chat_line(self, text: str, color):
-        self.chat_history.controls.append(ft.Text(text, color=color, font_family="Microsoft YaHei"))
-        try:
-            self.chat_history.scroll_to(offset=-1, duration=120)
-        except Exception:
-            pass
+    async def _append_bubble(self, text: str, is_user: bool):
+        bubble = ft.Container(
+            alignment=ft.Alignment(1.0 if is_user else -1.0, 0),
+            padding=ft.Padding(40 if is_user else 8, 0, 8 if is_user else 40, 0),
+            content=ft.Container(
+                padding=ft.Padding(14, 10, 14, 10),
+                border_radius=ft.BorderRadius(16, 16, 4, 16)
+                if is_user
+                else ft.BorderRadius(16, 16, 16, 4),
+                bgcolor=AppColors.BUBBLE_USER
+                if is_user
+                else AppColors.BUBBLE_ASSISTANT,
+                content=ft.Text(
+                    text,
+                    color=AppColors.BUBBLE_USER_TEXT,
+                    size=14,
+                    selectable=True,
+                ) if is_user else ft.Markdown(
+                    text,
+                    selectable=True,
+                    extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                ),
+            ),
+        )
+        self.chat_history.controls.append(bubble)
+
+    # ── 筛选 & 撤销 ──────────────────────────────────────
 
     def current_filter_status(self) -> str:
         return self._current_filter
@@ -455,24 +776,16 @@ class TodoApp(ft.Column):
         self.update()
 
     def _sync_filter_highlight(self):
-        for btn in self._filter_buttons:
-            btn.style = ft.ButtonStyle(
-                padding=ft.Padding.symmetric(horizontal=8, vertical=4),
-                color=ft.Colors.PRIMARY if btn.content == self._current_filter else ft.Colors.ON_SURFACE_VARIANT,
-                overlay_color=ft.Colors.with_opacity(0.08, ft.Colors.PRIMARY),
-            )
+        for chip in self.filter_row.controls:
+            chip.selected = chip.data == self._current_filter
 
     def push_undo_snapshot(self):
         if self._restoring:
             return
         current = self.task_service.list_tasks(status="all")
         snapshot = [
-            TaskRecord(
-                name=task.name,
-                date=task.date,
-                completed=task.completed,
-            )
-            for task in current
+            TaskRecord(name=t.name, date=t.date, completed=t.completed)
+            for t in current
         ]
         self.undo_stack.append(snapshot)
         if len(self.undo_stack) > 20:
@@ -480,8 +793,6 @@ class TodoApp(ft.Column):
 
     def undo_last(self, e):
         if not self.undo_stack:
-            self.ai_result.value = "没有可撤销的操作。"
-            self.update()
             return
 
         snapshot = self.undo_stack.pop()
@@ -490,6 +801,5 @@ class TodoApp(ft.Column):
             self.task_service.replace_all_tasks(snapshot)
         finally:
             self._restoring = False
-        self.ai_result.value = "已撤销上一步操作。"
         self.load_tasks()
         self.update()

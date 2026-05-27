@@ -1,0 +1,16 @@
+.env
+.env.local
+data/*.db
+core/data/*.db
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+.claude/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

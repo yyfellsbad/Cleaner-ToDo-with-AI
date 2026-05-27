@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from storage.setting_repo import SettingRepo
 
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from core.constants.enums import TaskActionType
 from core.models.task import TaskRecord
+from services.nlp_task_parser import ParsedTaskIntent, parse_task_intent
 from services.task_service import TaskService
 
 
@@ -54,6 +58,7 @@ TaskActionName = Literal[
     "complete",
     "uncomplete",
     "help",
+    "plan",
     "unknown",
 ]
 
@@ -64,6 +69,7 @@ ToolName = Literal[
     "delete_task",
     "complete_task",
     "uncomplete_task",
+    "plan_tasks",
     "help",
     "unknown",
 ]
@@ -84,7 +90,11 @@ class TaskPlan(BaseModel):
     date_text: str | None = Field(
         default=None, description="Date text such as 明天 or 2026-04-28"
     )
-    status: str = Field(default="all", description="all, active, or completed")
+    end_date_text: str | None = Field(
+        default=None,
+        description="End date for duration tasks, e.g. 2026-04-30 or 后天",
+    )
+    status: str = Field(default="all", description="all, active, completed, or ongoing")
     completed: bool | None = Field(
         default=None, description="Whether the task should be completed"
     )
@@ -107,7 +117,8 @@ class PlannedTaskIntent:
     task_name: str | None = None
     target_text: str | None = None
     new_text: str | None = None
-    task_date: date | None = None
+    task_date: datetime | None = None
+    end_date: datetime | None = None
     completed: bool | None = None
     status: str = "all"
     keyword: str | None = None
@@ -118,11 +129,16 @@ class PlannedTaskIntent:
 
 
 class LLMService:
-    def __init__(self, task_service: TaskService | None = None):
+    MAX_MEMORY = 10  # 记忆最近N轮对话
+
+    def __init__(self, task_service: TaskService | None = None, setting_repo: "SettingRepo | None" = None):
         self.task_service = task_service or TaskService()
+        self._setting_repo = setting_repo
         self._pending_actions: dict[str, PendingAction] = {}
         self._planner = self._build_planner()
         self._chat_model = self._build_chat_model()
+        self._memory: list[tuple[str, str]] = []  # [(user_msg, assistant_reply), ...]
+        self._load_memory()
 
     def tools(self) -> list[ToolDefinition]:
         return [
@@ -157,6 +173,11 @@ class LLMService:
                 description="Delete a task. Always requires confirmation.",
                 arguments={"target_text": "string"},
             ),
+            ToolDefinition(
+                name="plan_tasks",
+                description="Analyze tasks and recommend what to do next based on urgency.",
+                arguments={},
+            ),
         ]
 
     def system_prompt(self) -> str:
@@ -167,29 +188,44 @@ class LLMService:
             "你是一个待办任务结构化提取器，只输出符合 schema 的 JSON，不要解释，不要 Markdown。\n\n"
             "## 输出要求\n"
             "- 必须输出 tool 和 action 字段\n"
-            "- tool 必须是：create_task, list_tasks, update_task, delete_task, complete_task, uncomplete_task, help, unknown\n"
-            "- action 必须是：create, list, update, delete, complete, uncomplete, help, unknown\n"
+            "- tool 必须是：create_task, list_tasks, update_task, delete_task, complete_task, uncomplete_task, plan_tasks, help, unknown\n"
+            "- action 必须是：create, list, update, delete, complete, uncomplete, plan, help, unknown\n"
             "- task_name 只保留核心任务名，不包含前缀、日期、数量、尾部修饰词\n"
-            "- date_text 只提日期词或标准日期文本，不要把整句塞进去\n"
+            "- date_text 只提日期词或标准日期文本，不要把整句塞进去。如有时间请附带，格式如 '明天 14:30' 或 '2026-06-01 09:00'\n"
+            "- end_date_text：当用户提到持续时间（如持续X天、从X到Y）时，填结束日期。如有时间请附带\n"
             "- batch_count 是整数；没有明确数量时填 1\n"
             "- 删除操作要设置 confirmation_required=true\n"
+            "- 规划/建议/安排接下来做什么 → 使用 plan_tasks\n"
+            "- 查询正在持续/进行中的任务 → list_tasks + status=\"ongoing\"\n"
             "- 如果不是任务操作，tool/action 都输出 unknown\n\n"
             "## 示例\n"
             "输入：为我增加明天开会的命令\n"
-            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天\",\"end_date_text\":null,\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：考试从6月1号持续到6月3号\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"考试\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-03\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：明天下午3点开会\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天 15:00\",\"end_date_text\":null,\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：今天9点到11点培训\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"培训\",\"date_text\":\"今天 09:00\",\"end_date_text\":\"今天 11:00\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：帮我加5条待办\n"
-            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":null,\"batch_count\":5,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":null,\"end_date_text\":null,\"batch_count\":5,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：完成所有任务\n"
             "输出：{\"tool\":\"complete_task\",\"action\":\"complete\",\"target_text\":null,\"complete_scope\":\"all\",\"confirmation_required\":false}\n\n"
             "输入：删除待办A\n"
             "输出：{\"tool\":\"delete_task\",\"action\":\"delete\",\"target_text\":\"待办A\",\"delete_scope\":\"matched\",\"confirmation_required\":true}\n\n"
+            "输入：我接下来应该做什么\n"
+            "输出：{\"tool\":\"plan_tasks\",\"action\":\"plan\",\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：帮我安排一下今天的任务\n"
+            "输出：{\"tool\":\"plan_tasks\",\"action\":\"plan\",\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：正在持续的任务有哪些\n"
+            "输出：{\"tool\":\"list_tasks\",\"action\":\"list\",\"status\":\"ongoing\",\"keyword\":null,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "## 当前工具\n"
             f"{tool_list}"
         )
 
     def plan(self, text: str) -> PlannedTaskIntent:
         if self._planner is None:
-            return self._unknown_intent(text)
+            return self._nlp_fallback(text)
 
         try:
             response = self._planner.invoke(
@@ -202,7 +238,7 @@ class LLMService:
             payload = getattr(response, "content", response)
             return self._plan_to_intent(text, self._decode_plan_payload(payload))
         except Exception:
-            return self._unknown_intent(text)
+            return self._nlp_fallback(text)
 
     def process(
         self,
@@ -210,9 +246,20 @@ class LLMService:
         confirmed: bool = False,
         confirmation_token: str | None = None,
         current_status: str = "all",
+        intent: PlannedTaskIntent | None = None,
     ) -> AssistantResult:
-        intent = self.plan(text)
+        if intent is None:
+            intent = self.plan(text)
         if intent.action == TaskActionType.UNKNOWN:
+            nlp_intent = self._nlp_fallback(text)
+            if nlp_intent.action != TaskActionType.UNKNOWN and nlp_intent.confidence >= 0.6:
+                return self.process(
+                    text,
+                    confirmed=confirmed,
+                    confirmation_token=confirmation_token,
+                    current_status=current_status,
+                    intent=nlp_intent,
+                )
             chat_reply = self.chat(text)
             if chat_reply and "不可用" not in chat_reply:
                 return AssistantResult(
@@ -228,10 +275,13 @@ class LLMService:
 
         if intent.action == TaskActionType.HELP:
             return AssistantResult(
-                message="我可以帮你新增、查看、修改、完成、取消完成和删除任务。删除前会先确认。",
+                message="我可以帮你新增、查看、修改、完成、取消完成和删除任务，还可以帮你规划接下来该做什么。删除前会先确认。",
                 action=intent.action,
                 suggested_actions=[tool.name for tool in self.tools()],
             )
+
+        if intent.action == TaskActionType.PLAN:
+            return self._plan_tasks()
 
         if intent.action == TaskActionType.LIST:
             tasks = self.task_service.list_tasks(
@@ -254,10 +304,14 @@ class LLMService:
                 intent.task_name,
                 max(1, intent.batch_count),
                 intent.task_date,
+                end_date=intent.end_date,
             )
             if len(created) == 1:
+                msg = f"已添加待办：{created[0].name}"
+                if created[0].end_date:
+                    msg += f"（{created[0].date.isoformat()} ~ {created[0].end_date.isoformat()}）"
                 return AssistantResult(
-                    message=f"已添加待办：{created[0].name}",
+                    message=msg,
                     action=intent.action,
                     tasks=created,
                 )
@@ -285,6 +339,7 @@ class LLMService:
                 task.id,
                 name=intent.new_text,
                 task_date=intent.task_date,
+                end_date=intent.end_date,
                 completed=intent.completed,
             )
             return AssistantResult(
@@ -415,25 +470,173 @@ class LLMService:
             tasks=deleted_tasks,
         )
 
+    def _get_memory_context(self) -> str:
+        """将记忆转为上下文字符串。"""
+        if not self._memory:
+            return ""
+        lines = ["以下是最近的对话记录，供你参考："]
+        for user_msg, reply in self._memory:
+            lines.append(f"用户：{user_msg}")
+            lines.append(f"助手：{reply}")
+        return "\n".join(lines)
+
+    def _load_memory(self):
+        """从数据库加载记忆。"""
+        if not self._setting_repo:
+            return
+        raw = self._setting_repo.get("llm_memory")
+        if not raw:
+            return
+        try:
+            data = json.loads(raw)
+            self._memory = [(m[0], m[1]) for m in data[-self.MAX_MEMORY:]]
+        except (json.JSONDecodeError, IndexError, TypeError):
+            self._memory = []
+
+    def _save_memory(self):
+        """将记忆写入数据库。"""
+        if not self._setting_repo:
+            return
+        self._setting_repo.set("llm_memory", json.dumps(self._memory, ensure_ascii=False))
+
+    def _remember(self, user_msg: str, reply: str):
+        """记录一轮对话。"""
+        self._memory.append((user_msg, reply))
+        if len(self._memory) > self.MAX_MEMORY:
+            self._memory.pop(0)
+        self._save_memory()
+
+    def clear_memory(self):
+        self._memory.clear()
+        self._save_memory()
+
     def chat(self, text: str) -> str:
         if self._chat_model is None:
             return "聊天模型当前不可用。请先配置 OPENAI_API_KEY，或稍后再试。"
 
+        memory_ctx = self._get_memory_context()
+        system_msg = "你是一个简洁友好的中文助手。可以正常聊天；如果用户问到待办操作，也可以先解释再建议他用任务指令。"
+        if memory_ctx:
+            system_msg += f"\n\n{memory_ctx}"
+
         prompt = ChatPromptTemplate.from_messages(
             [
-                (
-                    "system",
-                    "你是一个简洁友好的中文助手。可以正常聊天；如果用户问到待办操作，也可以先解释再建议他用任务指令。",
-                ),
+                ("system", system_msg),
                 ("human", "{user_input}"),
             ]
         )
         chain = prompt | self._chat_model
         try:
             response = chain.invoke({"user_input": text})
-            return getattr(response, "content", "") or "我暂时没有生成回复。"
+            reply = getattr(response, "content", "") or "我暂时没有生成回复。"
+            self._remember(text, reply)
+            return reply
         except Exception:
             return "聊天服务暂时不可用，请稍后再试。"
+
+    def _plan_tasks(self) -> AssistantResult:
+        tasks = self.task_service.list_tasks(status="active")
+        if not tasks:
+            return AssistantResult(
+                message="当前没有未完成的任务，你可以先添加一些待办。",
+                action=TaskActionType.PLAN,
+            )
+
+        today = date.today()
+        # 按紧迫性排序：已过期 > 今天到期 > 明天 > 更远
+        def urgency_key(t):
+            deadline = (t.end_date or t.date).date()
+            days_left = (deadline - today).days
+            return days_left
+
+        tasks_sorted = sorted(tasks, key=urgency_key)
+
+        # 构建任务摘要
+        task_lines = []
+        for i, t in enumerate(tasks_sorted, 1):
+            deadline = (t.end_date or t.date).date()
+            days_left = (deadline - today).days
+            status = ""
+            if days_left < 0:
+                status = f"⚠️ 已过期 {abs(days_left)} 天"
+            elif days_left == 0:
+                status = "🔴 今天到期"
+            elif days_left == 1:
+                status = "🟡 明天到期"
+            elif days_left <= 3:
+                status = f"🟢 {days_left} 天后到期"
+            else:
+                status = f"📅 {days_left} 天后到期"
+
+            desc = f"（{t.description}）" if t.description else ""
+            dur = ""
+            if t.end_date:
+                dur = f" [持续 {(t.end_date - t.date).days} 天]"
+            task_lines.append(f"{i}. {t.name}{desc} - {status}{dur}")
+
+        task_summary = "\n".join(task_lines)
+
+        # 用 LLM 生成规划建议
+        if self._chat_model:
+            try:
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        (
+                            "system",
+                            "你是一个任务规划助手。根据用户的待办列表，分析紧迫性，"
+                            "给出简洁的执行建议（1-3条最关键的行动）。用中文回答，格式清晰。",
+                        ),
+                        (
+                            "human",
+                            f"今天是 {today.isoformat()}，以下是我的待办任务：\n\n"
+                            f"{task_summary}\n\n"
+                            "请帮我分析应该先做什么，给出简短的建议。",
+                        ),
+                    ]
+                )
+                chain = prompt | self._chat_model
+                response = chain.invoke({})
+                msg = getattr(response, "content", "") or "无法生成规划建议。"
+            except Exception:
+                msg = self._build_fallback_plan(tasks_sorted, today)
+        else:
+            msg = self._build_fallback_plan(tasks_sorted, today)
+
+        return AssistantResult(
+            message=msg,
+            action=TaskActionType.PLAN,
+            tasks=tasks_sorted,
+        )
+
+    @staticmethod
+    def _build_fallback_plan(tasks, today) -> str:
+        lines = ["📋 任务规划建议：\n"]
+        overdue = [t for t in tasks if (t.end_date or t.date).date() < today]
+        today_tasks = [t for t in tasks if (t.end_date or t.date).date() == today]
+        soon = [t for t in tasks if 0 < ((t.end_date or t.date).date() - today).days <= 3]
+
+        if overdue:
+            lines.append("⚠️ 以下任务已过期，建议优先处理：")
+            for t in overdue[:3]:
+                lines.append(f"  - {t.name}")
+            lines.append("")
+
+        if today_tasks:
+            lines.append("🔴 以下任务今天到期：")
+            for t in today_tasks[:3]:
+                lines.append(f"  - {t.name}")
+            lines.append("")
+
+        if soon:
+            lines.append("🟡 近期任务（3天内）：")
+            for t in soon[:3]:
+                lines.append(f"  - {t.name}")
+            lines.append("")
+
+        if not overdue and not today_tasks:
+            lines.append("✅ 没有紧急任务，可以按计划推进。")
+
+        return "\n".join(lines)
 
     def _build_planner(self):
         if ChatOpenAI is None or ChatPromptTemplate is None:
@@ -484,6 +687,10 @@ class LLMService:
         if plan.date_text:
             task_date = self.task_service.resolve_date(plan.date_text)
 
+        end_date = None
+        if plan.end_date_text:
+            end_date = self.task_service.resolve_date(plan.end_date_text)
+
         return PlannedTaskIntent(
             action=action,
             raw_text=raw_text,
@@ -491,6 +698,7 @@ class LLMService:
             target_text=plan.target_text or plan.task_name,
             new_text=plan.new_text,
             task_date=task_date,
+            end_date=end_date,
             completed=plan.completed,
             status=plan.status,
             keyword=plan.keyword,
@@ -510,6 +718,7 @@ class LLMService:
             "delete_task": TaskActionType.DELETE,
             "complete_task": TaskActionType.COMPLETE,
             "uncomplete_task": TaskActionType.UNCOMPLETE,
+            "plan_tasks": TaskActionType.PLAN,
             "help": TaskActionType.HELP,
             "unknown": TaskActionType.UNKNOWN,
         }
@@ -520,6 +729,7 @@ class LLMService:
             "delete": TaskActionType.DELETE,
             "complete": TaskActionType.COMPLETE,
             "uncomplete": TaskActionType.UNCOMPLETE,
+            "plan": TaskActionType.PLAN,
             "help": TaskActionType.HELP,
             "unknown": TaskActionType.UNKNOWN,
         }
@@ -532,6 +742,28 @@ class LLMService:
 
     def _unknown_intent(self, raw_text: str) -> PlannedTaskIntent:
         return PlannedTaskIntent(action=TaskActionType.UNKNOWN, raw_text=raw_text)
+
+    def _nlp_fallback(self, text: str) -> PlannedTaskIntent:
+        parsed = parse_task_intent(text)
+        return self._parsed_to_planned(parsed)
+
+    def _parsed_to_planned(self, parsed: ParsedTaskIntent) -> PlannedTaskIntent:
+        return PlannedTaskIntent(
+            action=parsed.action,
+            raw_text=parsed.raw_text,
+            task_name=parsed.task_name,
+            target_text=parsed.target_text,
+            new_text=parsed.new_text,
+            task_date=parsed.task_date,
+            end_date=parsed.end_date,
+            completed=parsed.completed,
+            status=parsed.status,
+            keyword=parsed.keyword,
+            batch_count=parsed.batch_count,
+            delete_scope=parsed.delete_scope,
+            complete_scope=parsed.complete_scope,
+            confidence=parsed.confidence,
+        )
 
     def _decode_plan_payload(self, payload: Any) -> TaskPlan:
         if isinstance(payload, TaskPlan):

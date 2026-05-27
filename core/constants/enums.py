@@ -10,4 +10,5 @@ class TaskActionType(str, Enum):
     UNCOMPLETE = "uncomplete"
     SEARCH = "search"
     HELP = "help"
+    PLAN = "plan"
     UNKNOWN = "unknown"
