@@ -1,6 +1,9 @@
 # 优化记录
 
-本文档记录了针对 Cleaner To-Do with AI 项目的代码优化，日期：2026-05-21。
+本文档记录了针对 Cleaner To-Do with AI 项目的代码优化。
+
+- 2026-05-21：基础优化（LLM 双重调用、NLP 回退、中文化、DB 连接、主题系统、聊天抽屉、设置页）
+- 2026-05-27：日期/时间选择器重构、卡片状态标记、LLM 记忆持久化、聊天体验优化
 
 ---
 
@@ -190,3 +193,129 @@
 | `.gitignore` | 补充忽略规则 |
 | `.env.example` | 修正占位符 |
 | `requirements.txt` | 修正格式 + 补充依赖 |
+
+---
+
+## 7. 日期/时间选择器重构
+
+**问题：**
+1. 时间下拉框太窄（width=68），内容被截断
+2. "持续"按钮多余，应自动检测
+3. 持续任务时间 UI 混乱（不知哪个时间对应哪天）
+4. 任务卡片编辑器与新建不一致
+
+**实现 `ui/components/date_picker.py`（全新）：**
+- 替代原生 `ft.DatePicker`，完全自定义日历控件
+- **自动范围检测**：无需显式"持续"开关。点第一个日期设为 start，点第二个自动设为 end，点击端点取消
+- **自适应时间行**：单日期一行（时间输入+下拉），同天持续两行（开始/结束时间），跨天持续两行（各自日期+时间）
+- **时间选择**：小时/分钟下拉框（width=110，00-23/00-59）+ 文本直接输入
+- **月份切换动画**：`animate_position=200` 平滑过渡
+- **选中样式**：start/end 用主题色圆角背景，范围中间用浅色背景
+- `set_range(start, end)` / `reset()` 方法供外部调用
+
+**改造 `ui/components/task_item.py`：**
+- 删除独立的结束日期 TextField 和持续开关，日期编辑器完全复用 `CustomDatePicker`
+- 点击日期文本展开编辑器时，自动调用 `set_range(self.date, self.end_date)` 前置已有数据
+- 新增 `ongoing` 属性：`end_date and not completed and date <= now <= end_date`
+
+**改造 `ui/views/todo_view.py`：**
+- 删除 `_new_task_duration_toggle` 及相关逻辑
+- 新任务日历面板使用 `CustomDatePicker(show_time=True)`
+- 创建任务后自动调用 `picker.reset()` 并关闭面板
+
+---
+
+## 8. 时间精确到小时/分钟 + datetime 类型统一
+
+**问题：** `TaskRecord.date` 和 `end_date` 是 `date` 类型，不支持时间；`strptime` 使用 `%m/%d` 格式触发 DeprecationWarning。
+
+**改造 `core/models/task.py`：**
+- `date` 和 `end_date` 类型从 `date` 改为 `datetime`
+- 新增 `_parse_datetime(s)`：兼容 ISO 完整格式（`2026-05-27T14:30:00`）和纯日期格式（`2026-05-27`）
+- 新增 `_fmt_db(dt)`：仅当 hour/minute 非零时写入完整 ISO，否则只写日期
+
+**改造 `services/task_service.py`：**
+- `resolve_date()` / `try_parse_date()` 返回 `datetime`
+- 新增 `_try_parse_time()` / `_extract_time()` 解析 HH:MM 时间
+- 无年份日期格式（`%m/%d`、`%m-%d`）改为手动解析，消除 DeprecationWarning
+- 所有 `create_task`/`update_task` 参数改为 `datetime | None`
+
+---
+
+## 9. 卡片状态标记
+
+**问题：** 过期/完成/持续中的任务在视觉上无区分。
+
+**实现：**
+- **已完成**：加深背景（`opacity(0.92, PANEL_BG)`）+ "完成" 标签（蓝色调）
+- **已过期**：0.5 透明度 + "过期" 标签（红色调）
+- **正在持续**：时间戳显示绿色（`DATE_ONGOING = ft.Colors.GREEN`）
+- `_refresh_card_style()` 方法在状态变更后更新卡片外观
+
+**`AppColors` 新增：** `DATE_ONGOING = ft.Colors.GREEN`
+
+---
+
+## 10. LLM 交互体验优化
+
+### 10.1 思考动画 + 异步调用
+
+**问题：** LLM 处理期间 UI 无反馈，用户不知道是否在工作。
+
+**实现：**
+- 用户消息立即显示，同时创建思考气泡（`ProgressRing` + "思考中"文字）
+- LLM 调用通过 `asyncio.to_thread` 非阻塞执行
+- 调用完成后移除思考气泡，显示结果
+
+### 10.2 Markdown 渲染
+
+**问题：** LLM 回复中的 Markdown 格式（列表、加粗等）显示为纯文本。
+
+**实现：** 助手气泡改用 `ft.Markdown`（`GITHUB_WEB` 扩展集），文字可选中。
+
+### 10.3 LLM 记忆系统
+
+**问题：** 对话无上下文连续性，每条消息独立处理。
+
+**实现 `services/llm_service.py`：**
+- `_memory: list[tuple[str, str]]` 存储最近 10 轮对话
+- `_get_memory_context()` 将记忆格式化为上下文字符串，注入聊天系统提示
+- `_remember()` 每轮对话后追加并持久化
+- `clear_memory()` 清空并持久化
+
+**持久化：** 通过 `SettingRepo` 序列化为 JSON 存储在 `settings` 表（key=`"llm_memory"`），启动时自动加载，重启不丢失。
+
+### 10.4 聊天自动滚动
+
+**问题：** 对话超出一屏后，新消息不自动滚动到可见区域。
+
+**实现：** `ft.ListView(auto_scroll=True)` 自动滚动到最新消息，移除不可靠的 `scroll_to(offset=-1)` 调用。
+
+---
+
+## 11. 查询增强：ongoing 状态过滤
+
+**问题：** 用户问"正在持续的任务有哪些"时，LLM 无法正确过滤。
+
+**实现：**
+- `TaskService.list_tasks()` 新增 `"ongoing"` status 过滤：`end_date is not None and not completed and date <= now <= end_date`
+- LLM 系统 prompt 增加 ongoing 示例和状态说明
+- `TaskPlan.status` 字段描述更新为包含 ongoing
+
+---
+
+## 修改文件清单（2026-05-27 更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/date_picker.py` | **新增**：自定义日历组件（自动范围、自适应时间、小时/分钟选择） |
+| `core/models/task.py` | date→datetime 类型、`_parse_datetime`/`_fmt_db` 辅助函数 |
+| `services/task_service.py` | 新增 ongoing 过滤、时间解析、datetime 返回类型 |
+| `services/llm_service.py` | 记忆系统（持久化）、思考动画支持、ongoing 示例 |
+| `ui/components/task_item.py` | 复用 CustomDatePicker、卡片状态标记、ongoing 绿色时间戳 |
+| `ui/views/todo_view.py` | 去除持续开关、思考动画、Markdown 气泡、async LLM、自动滚动 |
+| `ui/theme.py` | 新增 `DATE_ONGOING` 颜色 |
+| `app.py` | `SettingRepo` 实例传递给 `TodoApp` |
+| `CLAUDE.md` | 更新架构说明、UI 约定、文件描述 |
+| `README.md` | 补充新功能列表、更新项目结构 |
+| `FILE_CONTENTS.md` | 全面更新各模块文档 |
