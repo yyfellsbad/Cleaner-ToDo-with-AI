@@ -95,6 +95,9 @@ class TaskPlan(BaseModel):
         description="End date for duration tasks, e.g. 2026-04-30 or 后天",
     )
     status: str = Field(default="all", description="all, active, completed, or ongoing")
+    description: str | None = Field(
+        default=None, description="Optional task description or notes"
+    )
     completed: bool | None = Field(
         default=None, description="Whether the task should be completed"
     )
@@ -119,6 +122,7 @@ class PlannedTaskIntent:
     new_text: str | None = None
     task_date: datetime | None = None
     end_date: datetime | None = None
+    description: str | None = None
     completed: bool | None = None
     status: str = "all"
     keyword: str | None = None
@@ -148,6 +152,7 @@ class LLMService:
                 arguments={
                     "task_name": "string",
                     "date_text": "optional string",
+                    "description": "optional string",
                 },
             ),
             ToolDefinition(
@@ -165,6 +170,7 @@ class LLMService:
                     "target_text": "string",
                     "new_text": "optional string",
                     "date_text": "optional string",
+                    "description": "optional string",
                     "completed": "optional bool",
                 },
             ),
@@ -194,6 +200,7 @@ class LLMService:
             "- date_text 只提日期词或标准日期文本，不要把整句塞进去。如有时间请附带，格式如 '明天 14:30' 或 '2026-06-01 09:00'\n"
             "- end_date_text：当用户提到持续时间（如持续X天、从X到Y）时，填结束日期。如有时间请附带\n"
             "- batch_count 是整数；没有明确数量时填 1\n"
+            "- description：用户提到的补充说明、备注、注意事项等，1-50 字\n"
             "- 删除操作要设置 confirmation_required=true\n"
             "- 规划/建议/安排接下来做什么 → 使用 plan_tasks\n"
             "- 查询正在持续/进行中的任务 → list_tasks + status=\"ongoing\"\n"
@@ -203,8 +210,8 @@ class LLMService:
             "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天\",\"end_date_text\":null,\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：考试从6月1号持续到6月3号\n"
             "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"考试\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-03\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
-            "输入：明天下午3点开会\n"
-            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天 15:00\",\"end_date_text\":null,\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：明天下午3点开会，记得带笔记本\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天 15:00\",\"end_date_text\":null,\"description\":\"记得带笔记本\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：今天9点到11点培训\n"
             "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"培训\",\"date_text\":\"今天 09:00\",\"end_date_text\":\"今天 11:00\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：帮我加5条待办\n"
@@ -305,6 +312,7 @@ class LLMService:
                 max(1, intent.batch_count),
                 intent.task_date,
                 end_date=intent.end_date,
+                description=intent.description or "",
             )
             if len(created) == 1:
                 msg = f"已添加待办：{created[0].name}"
@@ -340,6 +348,7 @@ class LLMService:
                 name=intent.new_text,
                 task_date=intent.task_date,
                 end_date=intent.end_date,
+                description=intent.description,
                 completed=intent.completed,
             )
             return AssistantResult(
@@ -697,6 +706,7 @@ class LLMService:
             task_name=(plan.task_name or "").strip() or None,
             target_text=plan.target_text or plan.task_name,
             new_text=plan.new_text,
+            description=(plan.description or "").strip() or None,
             task_date=task_date,
             end_date=end_date,
             completed=plan.completed,

@@ -219,6 +219,7 @@ class CustomDatePicker(ft.Column):
             border_radius=6,
             on_select=on_select,
             dense=True,
+            menu_height=200,
         )
 
     def _build_minute_dd(self, value: int, on_select) -> ft.Dropdown:
@@ -231,6 +232,7 @@ class CustomDatePicker(ft.Column):
             border_radius=6,
             on_select=on_select,
             dense=True,
+            menu_height=200,
         )
 
     def _rebuild_time_row(self):

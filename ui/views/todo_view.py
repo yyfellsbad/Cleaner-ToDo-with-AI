@@ -208,6 +208,7 @@ class TodoApp(ft.Column):
         self.new_task = ft.TextField(
             hint_text="添加新任务",
             on_submit=self.add_clicked,
+            on_focus=self._on_new_task_focus,
             expand=True,
             border_radius=10,
             content_padding=ft.Padding(16, 12, 16, 12),
@@ -233,6 +234,17 @@ class TodoApp(ft.Column):
             animate_size=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=self._new_task_picker,
+        )
+
+        self._new_task_desc = ft.TextField(
+            hint_text="添加描述（可选）",
+            text_size=13,
+            content_padding=ft.Padding(8, 6, 8, 6),
+            border_radius=8,
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+            visible=False,
         )
 
         # ── 筛选按钮 ──
@@ -317,6 +329,8 @@ class TodoApp(ft.Column):
                     ),
                     # 日期选择面板（展开/收起）
                     self._new_task_picker_panel,
+                    # 描述输入
+                    self._new_task_desc,
                     # 筛选行
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -476,10 +490,12 @@ class TodoApp(ft.Column):
         if self.new_task.value:
             self.push_undo_snapshot()
             picker = self._new_task_picker
+            desc = (self._new_task_desc.value or "").strip()
             task_record = self.task_service.create_task(
                 self.new_task.value,
                 task_date=picker.range_start,
                 end_date=picker.range_end,
+                description=desc,
             )
             task = Task(
                 task_record.name,
@@ -494,17 +510,24 @@ class TodoApp(ft.Column):
             task.key = str(task_record.id)
             self.tasks.controls.append(task)
             self.new_task.value = ""
+            self._new_task_desc.value = ""
+            self._new_task_desc.visible = False
             self._new_task_date_label.visible = False
             self._new_task_picker_panel.visible = False
             picker.reset()
             await self.new_task.focus()
             self.update()
 
+    async def _on_new_task_focus(self, e):
+        if not self._new_task_picker_panel.visible:
+            await self._toggle_new_task_picker(e)
+
     async def _toggle_new_task_picker(self, e):
         panel = self._new_task_picker_panel
         if panel.visible:
             # 关闭：先淡出再隐藏
             panel.opacity = 0
+            self._new_task_desc.visible = False
             self.update()
             await asyncio.sleep(0.25)
             panel.visible = False
@@ -512,6 +535,7 @@ class TodoApp(ft.Column):
             # 打开：先显示再淡入
             panel.visible = True
             panel.opacity = 0
+            self._new_task_desc.visible = True
             self.update()
             await asyncio.sleep(0.05)
             panel.opacity = 1
@@ -564,10 +588,27 @@ class TodoApp(ft.Column):
         return label
 
     def task_delete(self, task):
-        self.push_undo_snapshot()
-        self.tasks.controls.remove(task)
-        self.delete_task(task)
-        self.update()
+        def _confirm(e):
+            self.page.close(dialog)
+            self.push_undo_snapshot()
+            self.tasks.controls.remove(task)
+            self.delete_task(task)
+            self.update()
+
+        def _cancel(e):
+            self.page.close(dialog)
+
+        dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("确认删除"),
+            content=ft.Text(f"确定要删除「{task.task_name}」吗？"),
+            actions=[
+                ft.TextButton("取消", on_click=_cancel),
+                ft.TextButton("删除", on_click=_confirm, style=ft.ButtonStyle(color=ft.Colors.ERROR)),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.open(dialog)
 
     def _on_task_reorder(self, e):
         old_index = e.old_index
