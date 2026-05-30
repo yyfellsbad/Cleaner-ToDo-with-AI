@@ -1,10 +1,10 @@
 # Flet 项目文件内容确认
 
-更新时间：2026-05-29
+更新时间：2026-05-30
 
 ## 项目描述
 
-本项目是一个基于 Flet 的桌面待办管理应用，具备 AI 自然语言交互能力（中文优先）。系统采用 SQLite 本地持久化，以 core/storage/services/ui 四层架构实现界面、业务与数据解耦。当前版本已完整实现：任务增删改查、完成状态切换、条件筛选、日期颜色编码、AI 对话驱动的任务操作（通过 DeepSeek API）、删除二次确认、撤销（最多 20 步）、拖拽排序、任务持续时间（自动范围检测）、精确时间选择（小时/分钟）、任务描述、AI 任务规划、AI 对话记忆（持久化到数据库）、思考动画、Markdown 渲染回复、卡片状态标记（过期/完成/持续中）、自定义日历组件、自定义标题栏、VSCode 风格侧边栏、聊天侧边面板、设置页面（外观/语言/助手设置）、主题跟随系统，以及 NLP 回退解析器。
+本项目是一个基于 Flet 的桌面待办管理应用，具备 AI 自然语言交互能力（中文优先）。系统采用 SQLite 本地持久化，以 core/storage/services/ui 四层架构实现界面、业务与数据解耦。当前版本已完整实现：任务增删改查、完成状态切换、条件筛选、日期颜色编码、AI 对话驱动的任务操作（通过 DeepSeek API）、删除二次确认、撤销（最多 20 步）、拖拽排序、任务持续时间（自动范围检测）、精确时间选择（小时/分钟）、任务描述、重复任务（每天/隔天/每N天，每期独立完成）、AI 任务规划、AI 对话记忆（持久化到数据库）、思考动画、Markdown 渲染回复、卡片状态标记（过期/完成/持续中）、自定义日历组件、自定义标题栏、VSCode 风格侧边栏、聊天侧边面板（首次打开问好、快捷气泡）、设置页面（外观/语言/助手设置、预设性格、API 配置管理）、主题跟随系统、多语言支持（中/英）、统计页面（环状图、柱状图、全年热力图+每日完成度评估+年份切换+午夜自动刷新）、日历视图、NLP 回退解析器、LLM 配置管理器（单例）。
 
 ---
 
@@ -12,7 +12,7 @@
 
 ### app.py
 - 应用唯一入口，调用 `ft.run(main)`。
-- `main(page)` 设置标题、隐藏原生标题栏、窗口约束（min_width=780, width=900, height=800）、初始化 `SettingRepo` 实例，加载 ThemeManager，将 `repo` 传给 `TodoApp(tm, repo)`。
+- `main(page)` 设置标题、隐藏原生标题栏、窗口约束（min_width=780, min_height=400）、初始化 `SettingRepo` 实例，加载 ThemeManager，初始化 `LLMConfigManager` 和 `DailyAssessmentRepo`，恢复上次窗口位置/大小（`win.width`/`win.height`/`win.left`/`win.top`），注册 `on_event` 回调在窗口 resize/move 时持久化，将所有依赖传给 `TodoApp(tm, repo, llm_cfg, assessment_repo)`。
 
 ### requirements.txt
 - `flet>=0.84.0`、`flet-charts>=0.85`
@@ -57,6 +57,14 @@
 - 方法：`get(key, default)`、`set(key, value)`。
 - 用于持久化主题偏好（深色模式、主题色、语言）和 LLM 对话记忆（`"llm_memory"` key，JSON 格式）。
 
+### storage/daily_assessment_repo.py
+- `DailyAssessmentRepo`：每日完成度评估存储（`daily_assessments` 表）。
+- 表结构：`date TEXT PRIMARY KEY, score INTEGER, manual INTEGER`。
+- `score` 0-4（0=无活动, 1=1-25%, 2=26-50%, 3=51-75%, 4=76-100%）。
+- `manual` 0=自动计算, 1=用户手动设定（自动回填不覆盖手动记录）。
+- 方法：`get(date)`、`get_range(start, end)`、`upsert(date, score, manual)`。
+- 遵循 `setting_repo.py` 模式：构造函数中 `_ensure_table()`，写操作用 `transaction()`。
+
 ---
 
 ## 4) services 层
@@ -74,7 +82,7 @@
   - `try_parse_date(value)`：严格日期解析，失败返回 None（供日期编辑器校验用，支持同样格式）
 
 ### services/llm_service.py
-- 核心 AI 编排层，使用 LangChain `ChatOpenAI`（OpenAI 兼容接口）。
+- 核心 AI 编排层，使用 LangChain `ChatOpenAI`（OpenAI 兼容接口）。通过 `LLMConfigManager` 读取配置（API 密钥、URL、模型、聊天人设），支持 `.env` 回退。
 - **数据模型**：
   - `TaskPlan(BaseModel)`：LLM 结构化输出 schema（tool、action、task_name、target_text、new_text、date_text、end_date_text、status[含ongoing]、batch_count、delete_scope、complete_scope、confirmation_required、reply）
   - `PlannedTaskIntent(dataclass)`：内部意图对象（含 `end_date: datetime`）
@@ -98,6 +106,12 @@
 - `_parse_duration(text)`：解析"从X到Y"、"持续X天"等持续时间模式
 - `_extract_create_name`：7 步渐进式清洗（移除前缀、日期词、数量词、通用词、"的"分割、虚词、截断）
 
+### services/llm_config_manager.py
+- `LLMConfigManager`（单例）：管理 LLM 配置（API 密钥、Base URL、模型名称、聊天人设）。
+- 通过 `SettingRepo` 持久化，启动时从 `.env` 回退读取默认值。
+- `test_connection()`：发送测试请求验证配置有效性。
+- 属性：`api_key`、`base_url`、`model`、`chat_prompt`，均有 getter/setter。
+
 ---
 
 ## 5) ui 层
@@ -114,10 +128,12 @@
   - `_build_theme(seed)`：构建 `ft.Theme`（Microsoft YaHei 字体、Compact 密度）
 
 ### ui/views/todo_view.py
-- `TodoApp(ft.Column)`：主视图，持有所有状态。构造函数接收 `ThemeManager` 和可选的 `SettingRepo`（传给 LLMService）。
+- `TodoApp(ft.Column)`：主视图，持有所有状态。构造函数接收 `ThemeManager`、可选的 `SettingRepo`（传给 LLMService）、可选的 `LLMConfigManager` 和可选的 `DailyAssessmentRepo`（传给 StatsView）。
 - **自定义标题栏**：`ft.WindowDragArea` 包含应用名 + 最小化/最大化/关闭按钮。
 - **VSCode 风格侧边栏**：48px 宽，包含智能助手、统计、日历（预留/禁用）、设置四个图标按钮。聊天、统计、设置互斥。
-- **聊天侧边面板**：`ft.Row` 布局（侧边栏 → 抽屉 → 内容），`animate_opacity` 过渡动画，`BorderRadius(12, 4, 4, 12)`。再次点击关闭，与设置互斥。助手气泡使用 `ft.Markdown`（GITHUB_WEB 扩展）渲染。
+- **聊天侧边面板**：`ft.Row` 布局（侧边栏 → 抽屉 → 内容），`animate_opacity` 过渡动画，`BorderRadius(12, 4, 4, 12)`。再次点击关闭，与设置互斥。助手气泡使用 `ft.Markdown`（GITHUB_WEB 扩展）渲染。用户气泡 `BorderRadius(16,16,16,4)`，助手气泡 `BorderRadius(4,16,16,16)`。
+- **快捷气泡**：输入框上方 4 个 Chip（最近七天计划/接下来做什么/查看所有待办/清除已完成），使用 `_make_quick_chip_handler` 工厂函数生成异步处理器。
+- **首次问好**：基于时间的问候 + 任务数量摘要 + 建议操作，区别于欢迎弹窗的完整任务列表。
 - **任务面板**：输入行（TextField + 日历按钮 + 日期标签 + FAB）+ 筛选行（all/active/completed/expired）+ 排序下拉（140px 宽）+ 清除/撤销 + ReorderableListView。
 - **新任务日期**：使用 `CustomDatePicker(show_time=True)`，支持自动范围检测，创建后调用 `picker.reset()` 并自动关闭面板。
 - **排序**：6 种排序模式（日期↑/↓、名称A-Z/Z-A、持续时间↑/↓），`_apply_sort()` 在 `before_update` 中执行。
@@ -133,18 +149,24 @@
 
 ### ui/views/settings_view.py
 - `SettingsView(ft.Column)`：设置页面，左侧导航栏 + 右侧内容区。
-- **导航项**：外观（主题模式 + 主题色）、语言（中文/English）、助手设置（功能说明）。
+- **导航项**：外观（主题模式 + 主题色）、语言（中文/English）、助手设置（API 配置 + 预设性格）。
 - `_on_nav_click`：切换导航高亮 + 重建右侧内容区。
 - 外观：`ft.RadioGroup` 主题模式（浅色/深色/跟随系统）+ `ft.RadioGroup` 主题色。
 - 语言：`ft.RadioGroup` 语言选择（zh/en），通过 `ThemeManager.set_language` 持久化。
+- **助手设置**：API 密钥（密码字段）、Base URL、模型名称、聊天人设（多行文本 + 确认按钮）、测试连接按钮。配置通过 `LLMConfigManager` → `SettingRepo` 持久化。
+- **预设性格**：`PERSONA_PRESETS` 字典（阿喵/阿汪/砖家/小冰/默认），Chip 点击填充聊天人设字段。
 
 ### ui/views/stats_view.py
-- `StatsView(ft.Column)`：数据统计页面，使用 `flet-charts` 库（`PieChart` + `BarChart`）。
+- `StatsView(ft.Column)`：数据统计页面，使用 `flet-charts` 库（`PieChart` + `BarChart`），构造函数接收 `TaskService` 和 `DailyAssessmentRepo`。
 - **概览卡片行**：4 张卡片（总任务、已完成、完成率、已过期），每张含图标+数字+标签。
-- **环状图**：`PieChart(center_space_radius=60)` 实现环状效果，4 段（已完成蓝/进行中绿/已过期红/未开始灰），中心叠加显示总任务数。
-- **今日待办列表**：展示今天日期包含的所有未完成任务，含名称、时间、状态标签（进行中/今日/待办），空态显示"今日无待办"。
+- **环状图**：`PieChart(center_space_radius=60)` 实现环状效果，4 段（已完成/进行中/已过期/未开始），中心叠加显示总任务数。颜色使用 Material 3 语义色（`TERTIARY`/`SECONDARY`/`ERROR`/`OUTLINE`）。
+- **GitHub 风格热力图**：7 行（周一~日）× 52 列全年网格，左侧星期标签 + 顶部月份标签。方块 12×12px，间距 2px，圆角 3px。颜色 5 级（`GREEN` 透明度 0.15/0.30/0.55/0.85）。支持年份切换（`≪` `≫` 按钮）。
+- **今日完成度评估**：热力图卡片底部，5 个 Chip（未完成/25%/50%/75%/全部完成），点击即时更新热力图颜色并持久化（`manual=1`）。
+- **历史日期评估**：点击热力图方块弹出 `AlertDialog`，同样 5 个选项，确认后颜色即时更新。
+- **自动回填**：`_backfill_assessments()` 在 `_load_data()` 开头调用，遍历 1 年内无记录的日期，按任务完成比例计算 score 并写入（`manual=0`），不覆盖手动记录。
+- **午夜自动刷新**：`_schedule_midnight_refresh()` 计算距午夜秒数，sleep 后刷新进入下一天评估。
 - **近 7 天趋势**：`BarChart` 每天 2 根柱子（新增/完成），带日期轴和数值轴，底部图例。
-- **入场动画**：概览卡片逐张 `animate_opacity`（300ms，延迟 80ms），环状图 `animate_scale`（0.85→1.0）+ `animate_opacity`（400ms），今日待办和趋势图 `animate_opacity`。
+- **入场动画**：概览卡片逐张 `animate_opacity`（300ms，延迟 80ms），环状图 `animate_scale`（0.85→1.0）+ `animate_opacity`（400ms），热力图和趋势图 `animate_opacity`。
 - **`animate_in()`**：触发入场动画（首次显示或切换回来时），重置 opacity=0 后逐个延迟渐显。
 - **`refresh_data()`**：外部调用刷新（无动画重播）。
 - **数据来源**：从 `TaskService.list_tasks("all")` 在 Python 中计算所有指标。
@@ -172,17 +194,7 @@
 
 ---
 
-## 6) 空骨架文件（预留扩展）
-
-- `core/models/setting.py`、`core/constants/defaults.py`
-- `services/calendar_service.py`
-- `ui/app_shell.py`、`ui/i18n.py`、`ui/state.py`
-- `ui/views/calendar_view.py`
-- `ui/components/task_list.py`、`ui/components/settings_menu.py`、`ui/components/settings_panels.py`、`ui/components/empty_state.py`
-
----
-
-## 7) 启动方式
+## 6) 启动方式
 
 ```bash
 python app.py

@@ -86,7 +86,7 @@ ui/
   theme.py                  # ThemeManager（浅色/深色/跟随系统、主题色、语言）、AppColors
   i18n.py                   # 多语言翻译系统（中/英，190+ 翻译键）
   views/todo_view.py        # 主视图（侧边栏、聊天面板、拖拽排序、筛选、排序）
-  views/stats_view.py       # 统计页（环状图、柱状图、概览卡片、今日待办）
+  views/stats_view.py       # 统计页（环状图、柱状图、概览卡片、全年热力图+每日评估）
   views/calendar_view.py    # 日历页（月网格、任务圆点、年/月切换、日期任务详情）
   views/settings_view.py    # 设置页（外观/语言/助手设置，LLM 配置表单）
   components/task_item.py   # 卡片式任务（日期编辑器、描述、编辑/删除按钮、状态标记）

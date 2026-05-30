@@ -55,7 +55,7 @@ ui/views/todo_view.py  (TodoApp — main view, owns all state)
 | [storage/daily_assessment_repo.py](storage/daily_assessment_repo.py) | Daily completion assessment table (date, score 0-4, manual flag); auto-backfills unassessed days from task data |
 | [ui/theme.py](ui/theme.py) | `ThemeManager` singleton: theme mode (light/dark/system), seed color, language; `AppColors` semantic palette |
 | [ui/views/todo_view.py](ui/views/todo_view.py) | VSCode-style sidebar, chat drawer (side panel), task list (ReorderableListView), sorting, filters, date picker |
-| [ui/views/stats_view.py](ui/views/stats_view.py) | Stats page: PieChart donut, BarChart 7-day trend, summary cards, GitHub-style heatmap (26-week activity grid with daily completion assessment), entrance animations |
+| [ui/views/stats_view.py](ui/views/stats_view.py) | Stats page: PieChart donut, BarChart 7-day trend, summary cards, full-year GitHub-style heatmap (year navigation, daily completion assessment), entrance animations |
 | [ui/views/calendar_view.py](ui/views/calendar_view.py) | Calendar page: month grid with task dot indicators (Morandi colors), year/month navigation, day selection with task detail panel |
 | [ui/views/settings_view.py](ui/views/settings_view.py) | Settings page: left sidebar nav (外观, 语言, 助手设置), right content area. Assistant section has interactive LLM config fields (API key, base URL, model, chat prompt with confirm, test connection button), persona preset Chips (阿喵/阿汪/砖家/小冰/默认) |
 | [ui/i18n.py](ui/i18n.py) | Translation system: 190+ keys for zh/en, `t(key, *args)` lookup, supports live language switching |

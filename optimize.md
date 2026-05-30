@@ -5,7 +5,7 @@
 - 2026-05-21：基础优化（LLM 双重调用、NLP 回退、中文化、DB 连接、主题系统、聊天抽屉、设置页）
 - 2026-05-27：日期/时间选择器重构、卡片状态标记、LLM 记忆持久化、聊天体验优化
 - 2026-05-29：统计页面（flet-charts 环状图/柱状图、入场动画、今日待办、7 天趋势）
-- 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）
+- 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）、热力图+每日完成度评估、主题适配、项目清理、窗口位置记忆
 
 ---
 
@@ -760,3 +760,60 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `CLAUDE.md` | 更新 stats 描述 + key files |
 | `README.md` | 更新统计功能 + 项目结构 |
 | `optimize.md` | 追加本次优化记录 |
+
+---
+
+## 24. 统计页主题适配
+
+**问题：** 统计页图表和热力图颜色使用硬编码 hex 值（Morandi 色系），深色/浅色模式切换时颜色不协调。
+
+**实现 `ui/views/stats_view.py`：**
+- 环状图 4 段颜色：硬编码 hex → Material 3 语义色（`TERTIARY`/`SECONDARY`/`ERROR`/`OUTLINE`）
+- 热力图方块颜色：5 级 `GREEN` 透明度（0.15/0.30/0.55/0.85），自动适配深色/浅色模式
+- 概览卡片图标颜色：统一使用语义色（`PRIMARY`/`TERTIARY`/`SECONDARY`/`ERROR`）
+- 柱状图颜色：`TERTIARY`（新增）/ `PRIMARY`（完成）
+- 评估对话框 Chip 颜色：使用 `PRIMARY_CONTAINER`/`PRIMARY` 语义色
+
+**效果：** 所有颜色随主题自动适配，深色/浅色模式下视觉一致。
+
+---
+
+## 25. 项目清理
+
+**清理内容：**
+- 删除 8 个空 Python 骨架文件：`core/models/setting.py`、`services/calendar_service.py`、`ui/app_shell.py`、`ui/state.py`、`ui/components/empty_state.py`、`ui/components/settings_menu.py`、`ui/components/settings_panels.py`、`ui/components/task_list.py`
+- 删除重复数据库目录 `core/data/`
+- 删除测试产物 `data/llm_complete_test.db`
+
+**文档更新：**
+- `FILE_CONTENTS.md`：删除第 6 节空骨架文件列表，更新各文件描述（stats_view 热力图、settings_view 预设性格、todo_view 聊天改进、app.py 依赖注入、新增 daily_assessment_repo 和 llm_config_manager）
+- `CLAUDE.md`：更新 key files 表和 UI conventions
+- `README.md`：更新功能列表和项目结构
+
+---
+
+## 修改文件清单（2026-05-30 主题适配+清理）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/stats_view.py` | 颜色改为 Material 3 语义色 |
+| `FILE_CONTENTS.md` | 删除空骨架节 + 更新文件描述 |
+| `CLAUDE.md` | 更新 key files + UI conventions |
+| `README.md` | 更新功能列表 + 项目结构 |
+| 8 个空 .py 文件 | **删除** |
+| `core/data/` | **删除**（重复数据库目录） |
+| `data/llm_complete_test.db` | **删除**（测试产物） |
+
+---
+
+## 26. 窗口位置和大小记忆
+
+**问题：** 每次启动应用窗口都回到固定位置（1100×800），用户需手动调整。
+
+**实现 `app.py`：**
+- 启动时从 `SettingRepo` 读取 `win.width`、`win.height`、`win.left`、`win.top`，恢复窗口几何
+- 注册 `page.window.on_event` 回调，监听 `RESIZE` 和 `MOVE` 事件
+- 每次 resize/move 时通过 `repo.set()` 持久化到 `settings` 表
+- 无历史记录时使用默认值（1100×800，居中）
+
+**效果：** 关闭后重新打开，窗口自动恢复到上次的位置和大小。
