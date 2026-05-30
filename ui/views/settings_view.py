@@ -1,14 +1,28 @@
 from __future__ import annotations
 
+import asyncio
+
 import flet as ft
 
+from ui.i18n import t
 from ui.theme import AppColors, THEME_SEEDS, THEME_SEED_LABELS, ThemeManager
 
 
+PERSONA_PRESETS: dict[str, str] = {
+    "阿喵": "你是一只可爱的猫娘助手「阿喵」，说话带喵~语气，活泼可爱，用中文回答。如果用户问到待办操作，用可爱的语气提醒他们。",
+    "阿汪": "你是一只忠诚的柴犬助手「阿汪」，热情友好，偶尔用汪~语气，用中文回答。如果用户问到待办操作，用积极的语气鼓励他们。",
+    "砖家": "你是一位严谨的学术专家「砖家」，说话条理清晰、逻辑严密，喜欢引用数据和理论，用中文回答。如果用户问到待办操作，用专业的角度给出建议。",
+    "小冰": "你是温柔体贴的助手「小冰」，善解人意，语气温和，会关心用户的情绪，用中文回答。如果用户问到待办操作，用关怀的语气提醒。",
+    "默认": "你是一个简洁友好的中文助手。可以正常聊天；如果用户问到待办操作，也可以先解释再建议他用任务指令。",
+}
+
+
 class SettingsView(ft.Column):
-    def __init__(self, theme_manager: ThemeManager):
+    def __init__(self, theme_manager: ThemeManager, config_manager=None, on_lang_change=None):
         super().__init__()
         self.tm = theme_manager
+        self._cfg = config_manager
+        self._on_lang_change_cb = on_lang_change
         self.expand = True
         self.spacing = 0
         self._current_section = "appearance"
@@ -17,9 +31,9 @@ class SettingsView(ft.Column):
     def _build(self):
         # ── 左侧导航 ──
         self._nav_items = {
-            "appearance": ("外观", ft.Icons.PALETTE_OUTLINED),
-            "language": ("语言", ft.Icons.LANGUAGE),
-            "assistant": ("助手设置", ft.Icons.SMART_TOY_OUTLINED),
+            "appearance": (t("nav.appearance"), ft.Icons.PALETTE_OUTLINED),
+            "language": (t("nav.language"), ft.Icons.LANGUAGE),
+            "assistant": (t("nav.assistant"), ft.Icons.SMART_TOY_OUTLINED),
         }
 
         nav_controls = []
@@ -52,7 +66,7 @@ class SettingsView(ft.Column):
             )
 
         self._nav_column = ft.Container(
-            width=180,
+            width=150,
             padding=ft.Padding(12, 16, 12, 16),
             content=ft.Column(
                 spacing=4,
@@ -63,7 +77,7 @@ class SettingsView(ft.Column):
         # ── 右侧内容区 ──
         self._content_area = ft.Container(
             expand=True,
-            padding=ft.Padding(20, 16, 20, 16),
+            padding=ft.Padding(8, 16, 8, 16),
             content=self._build_section(self._current_section),
         )
 
@@ -95,9 +109,9 @@ class SettingsView(ft.Column):
             content=ft.Column(
                 spacing=8,
                 controls=[
-                    ft.Radio(value="light", label="浅色"),
-                    ft.Radio(value="dark", label="深色"),
-                    ft.Radio(value="system", label="跟随系统"),
+                    ft.Radio(value="light", label=t("settings.appearance.light")),
+                    ft.Radio(value="dark", label=t("settings.appearance.dark")),
+                    ft.Radio(value="system", label=t("settings.appearance.system")),
                 ],
             ),
             on_change=self._on_mode_change,
@@ -110,7 +124,7 @@ class SettingsView(ft.Column):
                 controls=[
                     ft.Radio(
                         value=name,
-                        label=THEME_SEED_LABELS.get(name, name),
+                        label=t(f"seed.{name}"),
                         active_color=seed,
                     )
                     for name, seed in THEME_SEEDS.items()
@@ -123,16 +137,16 @@ class SettingsView(ft.Column):
             spacing=20,
             scroll=ft.ScrollMode.AUTO,
             controls=[
-                ft.Text("外观设置", size=18, weight=ft.FontWeight.W_600),
+                ft.Text(t("settings.appearance.title"), size=18, weight=ft.FontWeight.W_600),
                 ft.Divider(),
-                ft.Text("主题模式", weight=ft.FontWeight.W_500),
+                ft.Text(t("settings.appearance.mode"), weight=ft.FontWeight.W_500),
                 mode_radios,
                 ft.Divider(),
-                ft.Text("主题色", weight=ft.FontWeight.W_500),
+                ft.Text(t("settings.appearance.seed"), weight=ft.FontWeight.W_500),
                 seed_radios,
                 ft.Container(height=8),
                 ft.Text(
-                    "设置会自动保存，下次打开时恢复。",
+                    t("settings.appearance.hint"),
                     size=12,
                     color=AppColors.TEXT_HINT,
                 ),
@@ -158,13 +172,13 @@ class SettingsView(ft.Column):
             spacing=20,
             scroll=ft.ScrollMode.AUTO,
             controls=[
-                ft.Text("语言设置", size=18, weight=ft.FontWeight.W_600),
+                ft.Text(t("settings.language.title"), size=18, weight=ft.FontWeight.W_600),
                 ft.Divider(),
-                ft.Text("界面语言", weight=ft.FontWeight.W_500),
+                ft.Text(t("settings.language.label"), weight=ft.FontWeight.W_500),
                 lang_radios,
                 ft.Container(height=8),
                 ft.Text(
-                    "切换语言后需要重启应用生效。",
+                    t("settings.language.hint"),
                     size=12,
                     color=AppColors.TEXT_HINT,
                 ),
@@ -172,37 +186,143 @@ class SettingsView(ft.Column):
         )
 
     def _build_assistant(self) -> ft.Control:
+        cfg = self._cfg
+        if not cfg:
+            return ft.Column(
+                spacing=20,
+                scroll=ft.ScrollMode.AUTO,
+                controls=[
+                    ft.Text(t("settings.assistant.title"), size=18, weight=ft.FontWeight.W_600),
+                    ft.Divider(),
+                    ft.Text(t("settings.assistant.not_loaded"), color=AppColors.TEXT_HINT),
+                ],
+            )
+
+        self._api_key_field = ft.TextField(
+            label=t("settings.assistant.api_key"),
+            value=cfg.api_key,
+            password=True,
+            can_reveal_password=True,
+            dense=True,
+            on_change=lambda e: cfg.set_api_key(e.control.value),
+        )
+        self._base_url_field = ft.TextField(
+            label="Base URL",
+            value=cfg.base_url,
+            dense=True,
+            on_change=lambda e: cfg.set_base_url(e.control.value),
+        )
+        self._model_field = ft.TextField(
+            label=t("settings.assistant.model"),
+            value=cfg.model,
+            dense=True,
+            on_change=lambda e: cfg.set_model(e.control.value),
+        )
+        self._chat_prompt_dirty = False
+        self._chat_prompt_field = ft.TextField(
+            label=t("settings.assistant.chat_prompt"),
+            value=cfg.chat_prompt,
+            multiline=True,
+            min_lines=5,
+            max_lines=12,
+            dense=True,
+            expand=True,
+            on_change=self._on_prompt_change,
+        )
+        self._save_prompt_btn = ft.Button(
+            t("settings.assistant.save_prompt"),
+            icon=ft.Icons.CHECK_ROUNDED,
+            visible=False,
+            on_click=self._save_prompt,
+        )
+
+        test_btn = ft.Button(
+            t("settings.assistant.test"),
+            icon=ft.Icons.LINK_ROUNDED,
+            on_click=self._test_connection,
+        )
+
+        # 预设性格 Chip 行
+        preset_chips = ft.Row(
+            wrap=True,
+            spacing=8,
+            controls=[
+                ft.Chip(
+                    label=ft.Text(name),
+                    on_click=self._on_preset_select,
+                    data=name,
+                )
+                for name in PERSONA_PRESETS
+            ],
+        )
+
         return ft.Column(
             spacing=20,
             scroll=ft.ScrollMode.AUTO,
             controls=[
-                ft.Text("助手设置", size=18, weight=ft.FontWeight.W_600),
+                ft.Text(t("settings.assistant.title"), size=18, weight=ft.FontWeight.W_600),
                 ft.Divider(),
+                ft.Text(t("settings.assistant.api_config"), weight=ft.FontWeight.W_500),
+                self._api_key_field,
+                self._base_url_field,
+                self._model_field,
+                ft.Container(height=4),
+                test_btn,
+                ft.Divider(),
+                ft.Text(t("settings.assistant.persona"), weight=ft.FontWeight.W_500),
+                ft.Text(t("settings.assistant.presets"), size=12, color=AppColors.TEXT_HINT),
+                preset_chips,
                 ft.Container(
-                    border_radius=8,
-                    padding=16,
-                    bgcolor=AppColors.PANEL_BG,
-                    content=ft.Column(
-                        spacing=8,
-                        controls=[
-                            ft.Text("关于智能助手", weight=ft.FontWeight.W_500),
-                            ft.Text(
-                                "智能助手支持自然语言操作待办任务，包括：\n\n"
-                                "• 新增任务：帮我添加一个待办\n"
-                                "• 查看待办：查看我的任务\n"
-                                "• 修改任务：把开会改成周五\n"
-                                "• 完成任务：标记任务为完成\n"
-                                "• 删除任务：删除待办xxx\n"
-                                "• 任务规划：我接下来应该做什么\n\n"
-                                "支持中文自然语言输入，也可指定日期和持续时间。",
-                                size=13,
-                                color=AppColors.TEXT_HINT,
-                            ),
-                        ],
-                    ),
+                    width=700,
+                    content=self._chat_prompt_field,
+                ),
+                self._save_prompt_btn,
+                ft.Container(height=8),
+                ft.Text(
+                    t("settings.assistant.hint"),
+                    size=12,
+                    color=AppColors.TEXT_HINT,
                 ),
             ],
         )
+
+    def _on_preset_select(self, e):
+        name = e.control.data
+        prompt = PERSONA_PRESETS.get(name, "")
+        if prompt:
+            self._chat_prompt_field.value = prompt
+            self._chat_prompt_dirty = True
+            self._save_prompt_btn.visible = True
+            self.update()
+
+    def _on_prompt_change(self, e):
+        self._chat_prompt_dirty = True
+        self._save_prompt_btn.visible = True
+        self.update()
+
+    def _save_prompt(self, e):
+        if not self._cfg:
+            return
+        self._cfg.set_chat_prompt(self._chat_prompt_field.value)
+        self._chat_prompt_dirty = False
+        self._save_prompt_btn.visible = False
+        self.update()
+
+    async def _test_connection(self, e):
+        if not self._cfg:
+            return
+        e.control.disabled = True
+        self.update()
+        success, msg = await asyncio.to_thread(self._cfg.test_connection)
+        e.control.disabled = False
+        self.update()
+        snack = ft.SnackBar(
+            content=ft.Text(msg),
+            bgcolor=ft.Colors.GREEN_400 if success else ft.Colors.RED_400,
+        )
+        self.page.overlay.append(snack)
+        snack.open = True
+        self.page.update()
 
     def _on_nav_click(self, e):
         section = e.control.data
@@ -229,3 +349,7 @@ class SettingsView(ft.Column):
 
     def _on_lang_change(self, e):
         self.tm.set_language(e.control.value)
+        if self._on_lang_change_cb:
+            self._on_lang_change_cb()
+        self._content_area.content = self._build_section(self._current_section)
+        self.update()

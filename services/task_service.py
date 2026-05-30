@@ -76,6 +76,8 @@ class TaskService:
         completed: bool = False,
         end_date: datetime | None = None,
         description: str = "",
+        repeat_days: int = 0,
+        repeat_mode: str = "once",
     ) -> TaskRecord:
         normalized_name = name.strip()
         if not normalized_name:
@@ -87,6 +89,8 @@ class TaskService:
             end_date=end_date,
             description=description.strip(),
             completed=completed,
+            repeat_days=repeat_days,
+            repeat_mode=repeat_mode,
         )
         return self.repository.create_task(record)
 
@@ -97,6 +101,8 @@ class TaskService:
         task_date: datetime | None = None,
         end_date: datetime | None = None,
         description: str = "",
+        repeat_days: int = 0,
+        repeat_mode: str = "once",
     ) -> list[TaskRecord]:
         normalized_name = base_name.strip()
         if not normalized_name:
@@ -104,7 +110,8 @@ class TaskService:
 
         normalized_count = max(1, int(count))
         if normalized_count == 1:
-            return [self.create_task(normalized_name, task_date, end_date=end_date, description=description)]
+            return [self.create_task(normalized_name, task_date, end_date=end_date, description=description,
+                                     repeat_days=repeat_days, repeat_mode=repeat_mode)]
 
         tasks = [
             TaskRecord(
@@ -112,6 +119,8 @@ class TaskService:
                 date=task_date or datetime.now().replace(second=0, microsecond=0),
                 end_date=end_date,
                 description=description,
+                repeat_days=repeat_days,
+                repeat_mode=repeat_mode,
             )
             for index in range(1, normalized_count + 1)
         ]
@@ -126,6 +135,8 @@ class TaskService:
         clear_end_date: bool = False,
         description: str | None = None,
         completed: bool | None = None,
+        repeat_days: int | None = None,
+        repeat_mode: str | None = None,
     ) -> TaskRecord:
         task = self.repository.get_task(task_id)
         if task is None:
@@ -143,6 +154,10 @@ class TaskService:
             task.description = description.strip()
         if completed is not None:
             task.completed = completed
+        if repeat_days is not None:
+            task.repeat_days = repeat_days
+        if repeat_mode is not None:
+            task.repeat_mode = repeat_mode
         return self.repository.update_task(task)
 
     def delete_task(self, task_id: int) -> None:
@@ -173,6 +188,9 @@ class TaskService:
                 end_date=task.end_date,
                 description=task.description,
                 completed=task.completed,
+                repeat_days=task.repeat_days,
+                repeat_mode=task.repeat_mode,
+                completed_dates=list(task.completed_dates),
             )
             for task in tasks
         ]

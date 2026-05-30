@@ -20,6 +20,7 @@ from core.constants.enums import TaskActionType
 from core.models.task import TaskRecord
 from services.nlp_task_parser import ParsedTaskIntent, parse_task_intent
 from services.task_service import TaskService
+from ui.i18n import t
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -111,6 +112,14 @@ class TaskPlan(BaseModel):
     reply: str | None = Field(
         default=None, description="Optional short reply when the tool is unknown or chat-like"
     )
+    repeat_days: int = Field(
+        default=0,
+        description="Repeat interval in days. 0=no repeat, 1=daily, 2=every other day, N=every N days",
+    )
+    repeat_mode: str = Field(
+        default="once",
+        description="Completion mode: 'once'=complete once means done, 'each'=each occurrence is independent",
+    )
 
 
 @dataclass(slots=True)
@@ -130,19 +139,33 @@ class PlannedTaskIntent:
     delete_scope: str = "matched"
     complete_scope: str = "matched"
     confidence: float = 0.0
+    repeat_days: int = 0
+    repeat_mode: str = "once"
 
 
 class LLMService:
     MAX_MEMORY = 10  # 记忆最近N轮对话
 
-    def __init__(self, task_service: TaskService | None = None, setting_repo: "SettingRepo | None" = None):
+    def __init__(self, task_service: TaskService | None = None, setting_repo: "SettingRepo | None" = None, config_manager=None):
         self.task_service = task_service or TaskService()
         self._setting_repo = setting_repo
+        self._config = config_manager
         self._pending_actions: dict[str, PendingAction] = {}
         self._planner = self._build_planner()
         self._chat_model = self._build_chat_model()
         self._memory: list[tuple[str, str]] = []  # [(user_msg, assistant_reply), ...]
         self._load_memory()
+
+    def _get_config(self, attr: str, env_key: str, default: str = "") -> str:
+        if self._config:
+            val = getattr(self._config, attr, None)
+            if val:
+                return val
+        return self._env(env_key, default) or default
+
+    def rebuild(self) -> None:
+        self._planner = self._build_planner()
+        self._chat_model = self._build_chat_model()
 
     def tools(self) -> list[ToolDefinition]:
         return [
@@ -199,6 +222,9 @@ class LLMService:
             "- task_name 只保留核心任务名，不包含前缀、日期、数量、尾部修饰词\n"
             "- date_text 只提日期词或标准日期文本，不要把整句塞进去。如有时间请附带，格式如 '明天 14:30' 或 '2026-06-01 09:00'\n"
             "- end_date_text：当用户提到持续时间（如持续X天、从X到Y）时，填结束日期。如有时间请附带\n"
+            "- repeat_days：重复间隔天数。0=不重复，1=每天，2=隔天，N=每N天。用户提到\"每天\"\"每日\"→1，\"隔天\"\"每两天\"→2\n"
+            "- repeat_mode：完成模式。\"once\"=完成一次即整体完成（默认），\"each\"=每期独立完成\n"
+            "- 判断规则：\"每天跑步\"\"隔天吃药\"→ repeat_mode=\"each\"；\"持续一周考试\"→ repeat_mode=\"once\"\n"
             "- batch_count 是整数；没有明确数量时填 1\n"
             "- description：用户提到的补充说明、备注、注意事项等，1-50 字\n"
             "- 删除操作要设置 confirmation_required=true\n"
@@ -209,7 +235,11 @@ class LLMService:
             "输入：为我增加明天开会的命令\n"
             "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天\",\"end_date_text\":null,\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：考试从6月1号持续到6月3号\n"
-            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"考试\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-03\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"考试\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-03\",\"repeat_days\":0,\"repeat_mode\":\"once\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：每天跑步持续一周\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"跑步\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-07\",\"repeat_days\":1,\"repeat_mode\":\"each\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：隔天吃药持续两周\n"
+            "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"吃药\",\"date_text\":\"2026-06-01\",\"end_date_text\":\"2026-06-14\",\"repeat_days\":2,\"repeat_mode\":\"each\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：明天下午3点开会，记得带笔记本\n"
             "输出：{\"tool\":\"create_task\",\"action\":\"create\",\"task_name\":\"开会\",\"date_text\":\"明天 15:00\",\"end_date_text\":null,\"description\":\"记得带笔记本\",\"batch_count\":1,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：今天9点到11点培训\n"
@@ -224,6 +254,8 @@ class LLMService:
             "输出：{\"tool\":\"plan_tasks\",\"action\":\"plan\",\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：帮我安排一下今天的任务\n"
             "输出：{\"tool\":\"plan_tasks\",\"action\":\"plan\",\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
+            "输入：最近七天计划\n"
+            "输出：{\"tool\":\"plan_tasks\",\"action\":\"plan\",\"status\":\"active\",\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "输入：正在持续的任务有哪些\n"
             "输出：{\"tool\":\"list_tasks\",\"action\":\"list\",\"status\":\"ongoing\",\"keyword\":null,\"delete_scope\":\"matched\",\"complete_scope\":\"matched\",\"confirmation_required\":false}\n\n"
             "## 当前工具\n"
@@ -275,14 +307,14 @@ class LLMService:
                     suggested_actions=[tool.name for tool in self.tools()],
                 )
             return AssistantResult(
-                message="我暂时没有识别出具体任务操作。你可以试试：帮我添加一个待办、帮我把开会改成周五、删除待办xxx。",
+                message=t("llm.unknown_intent"),
                 action=intent.action,
                 suggested_actions=[tool.name for tool in self.tools()],
             )
 
         if intent.action == TaskActionType.HELP:
             return AssistantResult(
-                message="我可以帮你新增、查看、修改、完成、取消完成和删除任务，还可以帮你规划接下来该做什么。删除前会先确认。",
+                message=t("llm.help"),
                 action=intent.action,
                 suggested_actions=[tool.name for tool in self.tools()],
             )
@@ -304,7 +336,7 @@ class LLMService:
         if intent.action == TaskActionType.CREATE:
             if not intent.task_name:
                 return AssistantResult(
-                    message="我识别到的是新增任务，但还缺少任务内容。比如：帮我添加一个待办：明天开会。",
+                    message=t("llm.missing_name"),
                     action=intent.action,
                 )
             created = self.task_service.create_tasks(
@@ -313,9 +345,11 @@ class LLMService:
                 intent.task_date,
                 end_date=intent.end_date,
                 description=intent.description or "",
+                repeat_days=intent.repeat_days,
+                repeat_mode=intent.repeat_mode,
             )
             if len(created) == 1:
-                msg = f"已添加待办：{created[0].name}"
+                msg = t("llm.created", created[0].name)
                 if created[0].end_date:
                     msg += f"（{created[0].date.isoformat()} ~ {created[0].end_date.isoformat()}）"
                 return AssistantResult(
@@ -324,7 +358,7 @@ class LLMService:
                     tasks=created,
                 )
             return AssistantResult(
-                message=f"已批量添加 {len(created)} 条待办。",
+                message=t("llm.batch_created", len(created)),
                 action=intent.action,
                 tasks=created,
             )
@@ -333,7 +367,7 @@ class LLMService:
             matched = self._resolve_matches(intent.target_text)
             if not matched:
                 return AssistantResult(
-                    message="没有找到匹配的任务。你可以补充更准确的名字。",
+                    message=t("llm.update_no_match"),
                     action=intent.action,
                 )
             if len(matched) > 1:
@@ -352,7 +386,7 @@ class LLMService:
                 completed=intent.completed,
             )
             return AssistantResult(
-                message=f"已更新任务：{updated.name}",
+                message=t("llm.updated", updated.name),
                 action=intent.action,
                 tasks=[updated],
             )
@@ -367,7 +401,7 @@ class LLMService:
 
             if not matched:
                 return AssistantResult(
-                    message="没有找到需要更新完成状态的任务。",
+                    message=t("llm.complete_no_match"),
                     action=intent.action,
                 )
 
@@ -383,19 +417,25 @@ class LLMService:
             for task in matched:
                 if task.id is None:
                     continue
-                updated_tasks.append(
-                    self.task_service.mark_complete(task.id, completed)
-                )
+                if task.is_recurring and task.repeat_mode == "each" and completed:
+                    from datetime import date as _date
+                    task.mark_occurrence(_date.today())
+                    self.task_service.repository.update_task(task)
+                    updated_tasks.append(task)
+                else:
+                    updated_tasks.append(
+                        self.task_service.mark_complete(task.id, completed)
+                    )
 
-            status_text = "完成" if completed else "未完成"
+            status_text = t("llm.status_done") if completed else t("llm.status_undone")
             if len(updated_tasks) == 1:
                 return AssistantResult(
-                    message=f"已标记为{status_text}：{updated_tasks[0].name}",
+                    message=t("llm.marked_single", status_text, updated_tasks[0].name),
                     action=intent.action,
                     tasks=updated_tasks,
                 )
             return AssistantResult(
-                message=f"已将 {len(updated_tasks)} 条任务标记为{status_text}。",
+                message=t("llm.marked_batch", len(updated_tasks), status_text),
                 action=intent.action,
                 tasks=updated_tasks,
             )
@@ -409,7 +449,7 @@ class LLMService:
                 matched = self._resolve_matches(intent.target_text)
             if not matched:
                 return AssistantResult(
-                    message="没有找到要删除的任务。",
+                    message=t("llm.delete_no_match"),
                     action=intent.action,
                 )
             if len(matched) > 1 and intent.delete_scope == "matched":
@@ -429,11 +469,11 @@ class LLMService:
                     ],
                 )
                 if intent.delete_scope == "all":
-                    prompt = f"请确认删除全部任务（共 {len(matched)} 条）。"
+                    prompt = t("llm.confirm_all", len(matched))
                 elif intent.delete_scope == "current":
-                    prompt = f"请确认删除当前筛选中的任务（共 {len(matched)} 条）。"
+                    prompt = t("llm.confirm_filtered", len(matched))
                 else:
-                    prompt = f"请确认删除：{matched[0].name}"
+                    prompt = t("llm.confirm_one", matched[0].name)
                 return AssistantResult(
                     message=prompt,
                     action=intent.action,
@@ -445,7 +485,7 @@ class LLMService:
             pending = self._pending_actions.get(confirmation_token)
             if pending is None:
                 return AssistantResult(
-                    message="确认令牌已失效，请重新发起删除请求。",
+                    message=t("llm.token_expired"),
                     action=intent.action,
                 )
             deleted_tasks = self.task_service.delete_tasks(pending.matched_task_ids)
@@ -453,28 +493,28 @@ class LLMService:
             deleted_name = (
                 deleted_tasks[0].name
                 if len(deleted_tasks) == 1
-                else f"{len(deleted_tasks)} 条任务"
+                else t("llm.task_count", len(deleted_tasks))
             )
             return AssistantResult(
-                message=f"已删除任务：{deleted_name}",
+                message=t("llm.deleted", deleted_name),
                 action=intent.action,
                 tasks=deleted_tasks,
             )
 
         return AssistantResult(
-            message="我已收到指令，但还无法执行这类操作。",
+            message=t("llm.unsupported"),
             action=intent.action,
         )
 
     def confirm_delete(self, confirmation_token: str) -> AssistantResult:
         pending = self._pending_actions.get(confirmation_token)
         if pending is None:
-            return AssistantResult(message="没有找到待确认的删除操作。")
+            return AssistantResult(message=t("llm.confirm_not_found"))
 
         deleted_tasks = self.task_service.delete_tasks(pending.matched_task_ids)
         self._pending_actions.pop(confirmation_token, None)
         return AssistantResult(
-            message=f"已删除 {len(deleted_tasks)} 条任务。",
+            message=t("llm.deleted_batch", len(deleted_tasks)),
             action=TaskActionType.DELETE,
             tasks=deleted_tasks,
         )
@@ -483,10 +523,10 @@ class LLMService:
         """将记忆转为上下文字符串。"""
         if not self._memory:
             return ""
-        lines = ["以下是最近的对话记录，供你参考："]
+        lines = [t("llm.memory_intro")]
         for user_msg, reply in self._memory:
-            lines.append(f"用户：{user_msg}")
-            lines.append(f"助手：{reply}")
+            lines.append(t("llm.memory_user", user_msg))
+            lines.append(t("llm.memory_assistant", reply))
         return "\n".join(lines)
 
     def _load_memory(self):
@@ -521,10 +561,10 @@ class LLMService:
 
     def chat(self, text: str) -> str:
         if self._chat_model is None:
-            return "聊天模型当前不可用。请先配置 OPENAI_API_KEY，或稍后再试。"
+            return t("llm.chat_unavailable")
 
         memory_ctx = self._get_memory_context()
-        system_msg = "你是一个简洁友好的中文助手。可以正常聊天；如果用户问到待办操作，也可以先解释再建议他用任务指令。"
+        system_msg = self._config.chat_prompt if self._config else "你是一个简洁友好的中文助手。可以正常聊天；如果用户问到待办操作，也可以先解释再建议他用任务指令。"
         if memory_ctx:
             system_msg += f"\n\n{memory_ctx}"
 
@@ -537,17 +577,17 @@ class LLMService:
         chain = prompt | self._chat_model
         try:
             response = chain.invoke({"user_input": text})
-            reply = getattr(response, "content", "") or "我暂时没有生成回复。"
+            reply = getattr(response, "content", "") or t("llm.empty_reply")
             self._remember(text, reply)
             return reply
         except Exception:
-            return "聊天服务暂时不可用，请稍后再试。"
+            return t("llm.chat_error")
 
     def _plan_tasks(self) -> AssistantResult:
         tasks = self.task_service.list_tasks(status="active")
         if not tasks:
             return AssistantResult(
-                message="当前没有未完成的任务，你可以先添加一些待办。",
+                message=t("llm.plan_empty"),
                 action=TaskActionType.PLAN,
             )
 
@@ -562,26 +602,26 @@ class LLMService:
 
         # 构建任务摘要
         task_lines = []
-        for i, t in enumerate(tasks_sorted, 1):
-            deadline = (t.end_date or t.date).date()
+        for i, task_item in enumerate(tasks_sorted, 1):
+            deadline = (task_item.end_date or task_item.date).date()
             days_left = (deadline - today).days
             status = ""
             if days_left < 0:
-                status = f"⚠️ 已过期 {abs(days_left)} 天"
+                status = f"⚠️ {t('llm.plan_overdue', abs(days_left))}"
             elif days_left == 0:
-                status = "🔴 今天到期"
+                status = f"🔴 {t('llm.plan_today')}"
             elif days_left == 1:
-                status = "🟡 明天到期"
+                status = f"🟡 {t('llm.plan_tomorrow')}"
             elif days_left <= 3:
-                status = f"🟢 {days_left} 天后到期"
+                status = f"🟢 {t('llm.plan_soon', days_left)}"
             else:
-                status = f"📅 {days_left} 天后到期"
+                status = f"📅 {t('llm.plan_soon', days_left)}"
 
-            desc = f"（{t.description}）" if t.description else ""
+            desc = f"（{task_item.description}）" if task_item.description else ""
             dur = ""
-            if t.end_date:
-                dur = f" [持续 {(t.end_date - t.date).days} 天]"
-            task_lines.append(f"{i}. {t.name}{desc} - {status}{dur}")
+            if task_item.end_date:
+                dur = f" {t('llm.plan_duration', (task_item.end_date - task_item.date).days)}"
+            task_lines.append(f"{i}. {task_item.name}{desc} - {status}{dur}")
 
         task_summary = "\n".join(task_lines)
 
@@ -605,7 +645,7 @@ class LLMService:
                 )
                 chain = prompt | self._chat_model
                 response = chain.invoke({})
-                msg = getattr(response, "content", "") or "无法生成规划建议。"
+                msg = getattr(response, "content", "") or t("llm.plan_failed")
             except Exception:
                 msg = self._build_fallback_plan(tasks_sorted, today)
         else:
@@ -619,31 +659,31 @@ class LLMService:
 
     @staticmethod
     def _build_fallback_plan(tasks, today) -> str:
-        lines = ["📋 任务规划建议：\n"]
-        overdue = [t for t in tasks if (t.end_date or t.date).date() < today]
-        today_tasks = [t for t in tasks if (t.end_date or t.date).date() == today]
-        soon = [t for t in tasks if 0 < ((t.end_date or t.date).date() - today).days <= 3]
+        lines = [f"📋 {t('llm.plan_advice_header')}\n"]
+        overdue = [task_item for task_item in tasks if (task_item.end_date or task_item.date).date() < today]
+        today_tasks = [task_item for task_item in tasks if (task_item.end_date or task_item.date).date() == today]
+        soon = [task_item for task_item in tasks if 0 < ((task_item.end_date or task_item.date).date() - today).days <= 3]
 
         if overdue:
-            lines.append("⚠️ 以下任务已过期，建议优先处理：")
-            for t in overdue[:3]:
-                lines.append(f"  - {t.name}")
+            lines.append(f"⚠️ {t('llm.plan_overdue_section')}")
+            for task_item in overdue[:3]:
+                lines.append(f"  - {task_item.name}")
             lines.append("")
 
         if today_tasks:
-            lines.append("🔴 以下任务今天到期：")
-            for t in today_tasks[:3]:
-                lines.append(f"  - {t.name}")
+            lines.append(f"🔴 {t('llm.plan_today_section')}")
+            for task_item in today_tasks[:3]:
+                lines.append(f"  - {task_item.name}")
             lines.append("")
 
         if soon:
-            lines.append("🟡 近期任务（3天内）：")
-            for t in soon[:3]:
-                lines.append(f"  - {t.name}")
+            lines.append(f"🟡 {t('llm.plan_soon_section')}")
+            for task_item in soon[:3]:
+                lines.append(f"  - {task_item.name}")
             lines.append("")
 
         if not overdue and not today_tasks:
-            lines.append("✅ 没有紧急任务，可以按计划推进。")
+            lines.append(f"✅ {t('llm.plan_no_urgent')}")
 
         return "\n".join(lines)
 
@@ -651,10 +691,10 @@ class LLMService:
         if ChatOpenAI is None or ChatPromptTemplate is None:
             return None
 
-        model_name = self._env("OPENAI_MODEL", "gpt-4o-mini")
-        base_url = self._env("OPENAI_BASE_URL")
-        temperature = float(self._env("OPENAI_TEMPERATURE", "0") or 0)
-        api_key = self._env("OPENAI_API_KEY")
+        model_name = self._get_config("model", "OPENAI_MODEL", "gpt-4o-mini")
+        base_url = self._get_config("base_url", "OPENAI_BASE_URL")
+        api_key = self._get_config("api_key", "OPENAI_API_KEY")
+        temperature = 0
         if not api_key:
             return None
 
@@ -678,10 +718,10 @@ class LLMService:
         if ChatOpenAI is None:
             return None
 
-        model_name = self._env("OPENAI_MODEL", "gpt-4o-mini")
-        base_url = self._env("OPENAI_BASE_URL")
-        temperature = float(self._env("OPENAI_TEMPERATURE", "0.4") or 0.4)
-        api_key = self._env("OPENAI_API_KEY")
+        model_name = self._get_config("model", "OPENAI_MODEL", "gpt-4o-mini")
+        base_url = self._get_config("base_url", "OPENAI_BASE_URL")
+        api_key = self._get_config("api_key", "OPENAI_API_KEY")
+        temperature = 0.4
         if not api_key:
             return None
 
@@ -716,6 +756,8 @@ class LLMService:
             delete_scope=plan.delete_scope,
             complete_scope=plan.complete_scope,
             confidence=0.99,
+            repeat_days=plan.repeat_days,
+            repeat_mode=plan.repeat_mode,
         )
 
     def _action_from_plan(
@@ -812,15 +854,15 @@ class LLMService:
 
     def _format_task_list(self, tasks: list[TaskRecord]) -> str:
         if not tasks:
-            return "当前没有待办任务。"
-        lines = ["当前任务列表："]
+            return t("llm.list_empty")
+        lines = [t("llm.list_header")]
         for index, task in enumerate(tasks, start=1):
-            status = "完成" if task.completed else "未完成"
+            status = t("llm.list_status_done") if task.completed else t("llm.list_status_undone")
             lines.append(f"{index}. {task.name} [{status}] {task.date.isoformat()}")
         return "\n".join(lines)
 
     def _format_ambiguity(self, tasks: list[TaskRecord]) -> str:
-        lines = ["我找到了多个可能匹配的任务，请再明确一点："]
+        lines = [t("llm.ambiguous")]
         for task in tasks[:5]:
             lines.append(f"- {task.name}")
         return "\n".join(lines)

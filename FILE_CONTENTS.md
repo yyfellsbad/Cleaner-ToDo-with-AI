@@ -1,6 +1,6 @@
 # Flet 项目文件内容确认
 
-更新时间：2026-05-27
+更新时间：2026-05-29
 
 ## 项目描述
 
@@ -15,8 +15,9 @@
 - `main(page)` 设置标题、隐藏原生标题栏、窗口约束（min_width=780, width=900, height=800）、初始化 `SettingRepo` 实例，加载 ThemeManager，将 `repo` 传给 `TodoApp(tm, repo)`。
 
 ### requirements.txt
-- `Flet=0.84.0`、`Flutter=3.41.4`、`Pyodide=0.27.7`
+- `flet>=0.84.0`、`flet-charts>=0.85`
 - `langchain>=0.2.14`、`langchain-openai>=0.1.22`、`python-dotenv>=1.0.1`
+- `pydantic>=2.0`
 
 ### .env（不提交）
 - `OPENAI_API_KEY`：DeepSeek API Key
@@ -115,7 +116,7 @@
 ### ui/views/todo_view.py
 - `TodoApp(ft.Column)`：主视图，持有所有状态。构造函数接收 `ThemeManager` 和可选的 `SettingRepo`（传给 LLMService）。
 - **自定义标题栏**：`ft.WindowDragArea` 包含应用名 + 最小化/最大化/关闭按钮。
-- **VSCode 风格侧边栏**：48px 宽，包含智能助手、日历（预留/禁用）、设置三个图标按钮。
+- **VSCode 风格侧边栏**：48px 宽，包含智能助手、统计、日历（预留/禁用）、设置四个图标按钮。聊天、统计、设置互斥。
 - **聊天侧边面板**：`ft.Row` 布局（侧边栏 → 抽屉 → 内容），`animate_opacity` 过渡动画，`BorderRadius(12, 4, 4, 12)`。再次点击关闭，与设置互斥。助手气泡使用 `ft.Markdown`（GITHUB_WEB 扩展）渲染。
 - **任务面板**：输入行（TextField + 日历按钮 + 日期标签 + FAB）+ 筛选行（all/active/completed/expired）+ 排序下拉（140px 宽）+ 清除/撤销 + ReorderableListView。
 - **新任务日期**：使用 `CustomDatePicker(show_time=True)`，支持自动范围检测，创建后调用 `picker.reset()` 并自动关闭面板。
@@ -136,6 +137,17 @@
 - `_on_nav_click`：切换导航高亮 + 重建右侧内容区。
 - 外观：`ft.RadioGroup` 主题模式（浅色/深色/跟随系统）+ `ft.RadioGroup` 主题色。
 - 语言：`ft.RadioGroup` 语言选择（zh/en），通过 `ThemeManager.set_language` 持久化。
+
+### ui/views/stats_view.py
+- `StatsView(ft.Column)`：数据统计页面，使用 `flet-charts` 库（`PieChart` + `BarChart`）。
+- **概览卡片行**：4 张卡片（总任务、已完成、完成率、已过期），每张含图标+数字+标签。
+- **环状图**：`PieChart(center_space_radius=60)` 实现环状效果，4 段（已完成蓝/进行中绿/已过期红/未开始灰），中心叠加显示总任务数。
+- **今日待办列表**：展示今天日期包含的所有未完成任务，含名称、时间、状态标签（进行中/今日/待办），空态显示"今日无待办"。
+- **近 7 天趋势**：`BarChart` 每天 2 根柱子（新增/完成），带日期轴和数值轴，底部图例。
+- **入场动画**：概览卡片逐张 `animate_opacity`（300ms，延迟 80ms），环状图 `animate_scale`（0.85→1.0）+ `animate_opacity`（400ms），今日待办和趋势图 `animate_opacity`。
+- **`animate_in()`**：触发入场动画（首次显示或切换回来时），重置 opacity=0 后逐个延迟渐显。
+- **`refresh_data()`**：外部调用刷新（无动画重播）。
+- **数据来源**：从 `TaskService.list_tasks("all")` 在 Python 中计算所有指标。
 
 ### ui/components/task_item.py
 - `Task(ft.Column)`：卡片式任务组件，接收 `datetime` 类型的 `date` 和 `end_date`。

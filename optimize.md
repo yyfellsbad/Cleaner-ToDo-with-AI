@@ -4,6 +4,8 @@
 
 - 2026-05-21：基础优化（LLM 双重调用、NLP 回退、中文化、DB 连接、主题系统、聊天抽屉、设置页）
 - 2026-05-27：日期/时间选择器重构、卡片状态标记、LLM 记忆持久化、聊天体验优化
+- 2026-05-29：统计页面（flet-charts 环状图/柱状图、入场动画、今日待办、7 天趋势）
+- 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）
 
 ---
 
@@ -319,3 +321,388 @@
 | `CLAUDE.md` | 更新架构说明、UI 约定、文件描述 |
 | `README.md` | 补充新功能列表、更新项目结构 |
 | `FILE_CONTENTS.md` | 全面更新各模块文档 |
+
+---
+
+## 12. 统计页面
+
+**问题：** 无数据可视化能力，用户无法直观了解任务完成情况和趋势。
+
+**实现 `ui/views/stats_view.py`（全新）：**
+- 使用 `flet-charts` 库（`PieChart` + `BarChart`），Flet 原生图表控件
+- **概览卡片行**：4 张卡片（总任务、已完成、完成率、已过期），每张含图标+数字+标签
+- **环状图**：`PieChart(center_space_radius=60)` 实现环状效果，4 段（已完成/进行中/已过期/未开始），中心叠加显示总任务数
+- **今日待办列表**：展示今天日期包含的所有未完成任务，含名称、时间、状态标签（进行中/今日/待办），空态显示"今日无待办"
+- **近 7 天趋势**：`BarChart` 每天 2 根柱子（新增/完成），带日期轴和数值轴，底部图例
+- **入场动画**：概览卡片逐张 `animate_opacity`（300ms，延迟 80ms），环状图 `animate_scale`（0.85→1.0）+ `animate_opacity`（400ms），今日待办和趋势图 `animate_opacity`
+- **刷新**：重置所有元素 opacity=0 后重新加载数据，逐个触发渐显动画
+- **数据来源**：从 `TaskService.list_tasks("all")` 在 Python 中计算所有指标（无需新增 SQL 查询）
+
+**改造 `ui/views/todo_view.py`：**
+- 侧边栏新增统计按钮（`BAR_CHART_OUTLINED` 图标），位于聊天和日历之间
+- `_sidebar_settings` 改为实例变量（便于切换 icon_color）
+- `open_stats` 方法：关闭聊天和设置（互斥），切换统计视图可见性，触发动画
+- `open_settings` / `_toggle_chat_drawer` 新增与统计的互斥逻辑
+
+**依赖：** `flet-charts>=0.85`（同时将 flet 从 0.84.0 升级到 0.85.2）
+
+---
+
+## 修改文件清单（2026-05-29 更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/stats_view.py` | **新增**：统计页面（环状图、柱状图、概览卡片、今日待办、入场动画） |
+| `ui/views/todo_view.py` | 侧边栏统计按钮 + 互斥逻辑 + settings 按钮实例化 |
+| `requirements.txt` | 新增 `flet-charts>=0.85`，flet 版本升级 |
+
+---
+
+## 13. AI 助手设置暴露 + LLM 配置管理器
+
+**问题：** API Key、Base URL、模型、聊天人设等配置硬编码在 `.env` 中，用户无法在应用内修改。
+
+**实现 `services/llm_config_manager.py`（全新）：**
+- `LLMConfigManager` 单例类，管理 `api_key`、`base_url`、`model`、`chat_prompt`
+- 首次加载从 `.env` 读取默认值，之后通过 `SettingRepo` 持久化
+- `set_api_key()` / `set_base_url()` / `set_model()` / `set_chat_prompt()` 方法自动保存 + 通知回调
+- `test_connection()` 发送 trivial 请求验证配置
+- `_on_changed` 回调触发 `LLMService.rebuild()` 运行时重配
+
+**改造 `ui/views/settings_view.py`：**
+- 助手设置区：API Key（密码字段）、Base URL、模型、聊天人设（多行文本 + 确认按钮）
+- 测试连接按钮：异步调用 `test_connection()`，SnackBar 显示结果
+- 聊天人设修改需手动确认（非自动保存）
+
+**改造 `services/llm_service.py`：**
+- 构造函数新增 `config_manager` 参数
+- `_get_config()` 辅助方法：优先读配置管理器，回退到 `.env`
+- `rebuild()` 方法重建 planner 和 chat model
+
+**改造 `ui/views/todo_view.py`：**
+- `TodoApp` 接收 `config_manager`，传递给 `LLMService`
+- `config_manager._on_changed` 绑定 `llm_service.rebuild()`
+
+---
+
+## 14. 紧迫排序
+
+**问题：** 默认排序（日期升序）无法反映任务紧迫程度。
+
+**实现：**
+- 新增 `"urgency_asc"` 排序模式作为默认
+- 排序键：`(end_date or date).date() - today`，天数越小越靠前
+- 已完成任务偏移 +10000 沉底
+- 筛选标签和排序下拉框新增"紧迫程度"选项
+
+---
+
+## 15. 日历视图
+
+**问题：** 侧边栏日历按钮为 placeholder（disabled），无日历功能。
+
+**实现 `ui/views/calendar_view.py`（全新）：**
+- 两卡片布局：日历网格卡 + 事件详情卡，圆角 16px + 阴影
+- **月份导航**：`≪` `≫` 切换年份，`<` `>` 切换月份，"今天"按钮跳回当前
+- **月网格**：7 列 × 5-6 行，单元格 48×62px，显示日期数字 + 任务圆点
+- **任务圆点**：莫兰迪色系 6 色区分状态（灰蓝=完成、赭石=过期、赤金=今日、灰绿=进行中、淡紫=未来、燕麦=待办），最多 4 个圆点
+- **日期选择**：点击日期刷新详情面板，显示当天任务列表（状态圆点 + 任务名 + 时间）
+- **数据来源**：`task_service.list_tasks("all")`，按日期范围过滤
+
+**改造 `ui/views/todo_view.py`：**
+- 侧边栏日历按钮启用，新增 `open_calendar()` 方法
+- `_sync_content_views` 扩展为四选一（main/stats/calendar/settings）
+- `_rebuild_views()` 新增日历视图重建
+
+---
+
+## 16. 多语言支持（i18n）
+
+**问题：** 所有 UI 字符串硬编码中文，语言设置无效。
+
+**实现 `ui/i18n.py`（全新）：**
+- 190+ 翻译键，覆盖设置、聊天、筛选、排序、统计、日历、LLM 消息等
+- `t(key, *args)` 函数：读取 `ThemeManager.language`，返回对应语言字符串，支持 `format(*args)`
+- 周期名、月份名使用 `picker.weekdays` / `picker.months` 逗号分隔格式
+
+**改造所有 UI 文件：**
+- `ui/views/settings_view.py`：~25 处替换
+- `ui/views/todo_view.py`：~60 处替换（问候、筛选、排序、对话框、状态）
+- `ui/views/stats_view.py`：~20 处替换
+- `ui/views/calendar_view.py`：直接使用 `t()` 调用
+- `ui/components/task_item.py`：~11 处替换
+- `ui/components/date_picker.py`：~17 处替换
+- `services/llm_service.py`：~30 处 UI 消息替换（LLM 系统 prompt 保持中文）
+- `services/llm_config_manager.py`：4 处替换
+- `ui/theme.py`：6 个主题色标签
+
+**实时刷新：**
+- `settings_view._on_lang_change` → `ThemeManager.set_language()` → `on_lang_change` 回调
+- `TodoApp._rebuild_views()` 重建设置、统计、日历视图 + 更新筛选/排序/按钮标签
+- 无需重启，切换语言即时生效
+
+**变量名冲突修复：**
+- `stats_view.py` 和 `todo_view.py` 中循环变量 `t`（TaskRecord）覆盖 i18n 函数 `t`，统一重命名为 `tk`
+
+---
+
+## 17. 窗口图标
+
+**问题：** 任务栏和窗口使用 Flet 默认图标。
+
+**实现：**
+- `app.py` 新增 `page.window.icon = str(ROOT_DIR / "pic" / "cleaner.ico")`
+- 使用绝对路径确保图标正确加载
+
+---
+
+## 修改文件清单（2026-05-30 更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/i18n.py` | **新增**：多语言翻译系统（190+ 键） |
+| `services/llm_config_manager.py` | **新增**：LLM 配置管理器单例 |
+| `ui/views/calendar_view.py` | **新增**：日历视图（月网格、任务圆点、年/月导航） |
+| `core/constants/defaults.py` | 新增 `LLM_DEFAULTS` 默认配置字典 |
+| `services/llm_service.py` | 配置管理器集成 + `rebuild()` + i18n |
+| `ui/views/todo_view.py` | 日历视图集成 + 四视图切换 + 紧迫排序 + i18n |
+| `ui/views/stats_view.py` | i18n + 变量名冲突修复 |
+| `ui/views/settings_view.py` | 助手设置表单 + i18n |
+| `ui/components/task_item.py` | i18n |
+| `ui/components/date_picker.py` | i18n（周期/月份名改为函数） |
+| `ui/theme.py` | i18n（主题色标签） |
+| `app.py` | 窗口图标 + LLMConfigManager 初始化 |
+| `CLAUDE.md` | 更新架构说明 |
+| `README.md` | 补充新功能列表 |
+
+---
+
+## 18. 重复任务（每期独立完成）
+
+**问题：** 持续任务（有 start_date 和 end_date）只支持"完成一次即视为完成"，无法表达"每天跑步""隔天吃药"等每期独立完成的需求。
+
+**数据模型：**
+- `repeat_days: int = 0`：重复间隔天数（0=不重复，1=每天，2=隔天，N=每N天）
+- `repeat_mode: str = "once"`：完成模式。`"once"`=完成一次即整体完成，`"each"`=每期独立完成
+- `completed_dates: list[str] = []`：JSON 数组，记录已完成的日期（ISO 格式）
+
+**LLM 自动判断：**
+- "每天跑步""每日打卡" → `repeat_days=1, repeat_mode="each"`
+- "隔天吃药" → `repeat_days=2, repeat_mode="each"`
+- "考试从6月1到3号" → `repeat_days=0, repeat_mode="once"`（或不设 repeat_days）
+
+**实现：**
+
+`core/models/task.py`：
+- 新增 `is_recurring`、`repeat_occurrences`、`all_occurrences_done` 属性
+- `mark_occurrence(d)` 标记某天完成，自动检查是否全部完成
+- `occurrence_done(d)` 检查某天是否已完成
+
+`services/llm_service.py`：
+- `TaskPlan` / `PlannedTaskIntent` 新增 `repeat_days`、`repeat_mode` 字段
+- 系统 prompt 新增 3 个示例（每天跑步、隔天吃药、持续考试）
+- COMPLETE 分支："each" 模式调用 `mark_occurrence(today)` 而非 `mark_complete()`
+
+`services/task_service.py`：
+- `create_task()` / `create_tasks()` 新增 `repeat_days`、`repeat_mode` 参数
+
+`storage/task_repo.py` / `storage/db.py`：
+- 新增 `repeat_days`、`repeat_mode`、`completed_dates` 三列迁移
+- INSERT/UPDATE SQL 更新为 8 字段
+
+`ui/components/task_item.py`：
+- 显示重复标签（"每天"、"每3天"）
+- "each" 模式显示进度（如 "3/7 完成"）
+
+`ui/views/calendar_view.py`：
+- "each" 模式：在每个应完成的日期显示独立圆点，已完成用完成色
+- `_tasks_for_date()` 和 `_task_dots_for_date()` 按重复计划迭代
+
+`ui/views/stats_view.py`：
+- 概览卡片：done/ongoing/expired 使用 `_is_done()` / `_is_ongoing()` / `_is_expired()` 辅助方法
+- 今日待办："each" 模式检查今天是否在重复计划内且未完成
+- 7 天趋势："each" 模式按 `all_occurrences_done` 判断完成
+
+`ui/i18n.py`：
+- 新增 `repeat.every_day`、`repeat.every_n_days`、`repeat.once_mode`、`repeat.each_mode`、`repeat.progress`
+
+---
+
+## 修改文件清单（2026-05-30 重复任务更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `storage/db.py` | 新增 3 列迁移（repeat_days, repeat_mode, completed_dates） |
+| `core/models/task.py` | 新增字段 + 重复任务属性/方法 |
+| `services/llm_service.py` | TaskPlan/Intent 新增字段 + 系统 prompt 更新 |
+| `services/task_service.py` | create_task/create_tasks 新增参数 |
+| `storage/task_repo.py` | COLUMNS + INSERT/UPDATE SQL 更新 |
+| `ui/components/task_item.py` | 重复标签 + 进度显示 |
+| `ui/views/calendar_view.py` | each 模式多日显示 + 圆点颜色 |
+| `ui/views/stats_view.py` | 重复任务完成/过期/今日判断 |
+| `ui/i18n.py` | 5 个重复相关翻译键 |
+| `CLAUDE.md` | 更新 key files + UI conventions |
+| `README.md` | 新增重复任务功能 |
+
+---
+
+## 19. 重复任务编辑 + 日历/统计显示
+
+**问题：** 重复任务只能通过 AI 对话创建，无法手动编辑；日历详情和统计今日待办不显示重复信息。
+
+**实现：**
+
+`services/task_service.py`：
+- `update_task()` 新增 `repeat_days` 和 `repeat_mode` 参数，支持从 UI 保存重复设置
+
+`ui/views/todo_view.py`：
+- `save_task()` 传递 `repeat_days` 和 `repeat_mode` 到 `update_task()`
+
+`ui/components/task_item.py`：
+- 编辑视图新增重复设置行：间隔天数输入框 + 模式下拉选择（完成一次即可 / 每期独立）
+- `edit_clicked()` 前置填入当前 repeat_days 和 repeat_mode
+- `save_clicked()` 读取并更新 repeat 字段，刷新日期显示
+
+`ui/views/calendar_view.py`：
+- 详情面板每个任务行下方显示重复标签（如"每天 · 3/7"）
+- 使用 `tk.repeat_occurrences` 计算总数
+
+`ui/views/stats_view.py`：
+- 今日待办每个任务名后追加重复标签和进度
+
+`ui/i18n.py`：
+- 新增 `task.repeat`（"重复"）、`task.repeat_days_unit`（"天"）
+
+---
+
+## 修改文件清单（2026-05-30 重复编辑更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `services/task_service.py` | `update_task()` 新增 repeat_days/repeat_mode 参数 |
+| `ui/views/todo_view.py` | `save_task()` 传递 repeat 字段 |
+| `ui/components/task_item.py` | 编辑 UI：重复间隔输入 + 模式选择 |
+| `ui/views/calendar_view.py` | 详情面板显示重复标签 + 进度 |
+| `ui/views/stats_view.py` | 今日待办显示重复标签 |
+| `ui/i18n.py` | 2 个新翻译键 |
+| `CLAUDE.md` | 更新 key files + UI conventions |
+| `README.md` | 更新重复任务功能描述 |
+
+---
+
+## 21. 重复任务 UI 改进
+
+**问题：** 重复任务的设置和显示不够直观——数字输入框不清晰，完成模式表述抽象，显示标签冗长混乱。
+
+**实现：**
+
+频率选择改为预设 Chip 行：
+- "不重复" / "每天" / "隔天" / "每3天" / "每7天" / "自定义"
+- 点击 Chip 自动设置 repeat_days，"自定义" 展开数字输入框
+
+完成模式改为带说明的 Chip 选项：
+- "只需一次"（once）— 说明："整个周期只需完成一次"
+- "每次都要"（each）— 说明："每个实例独立完成"
+- 只在 repeat_days > 0 时显示
+
+显示标签改进：
+- 卡片：`📅 06-01 ~ 06-07 · 每天 · 3/7 已打卡`
+- 日历详情：`每天 · 3/7 已打卡`
+- 统计今日：`每天 · 3/7 已打卡`
+
+i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every_3_days`、`repeat.every_7_days`、`repeat.custom`、`repeat.once_desc`、`repeat.each_desc`、`task.repeat_mode_label`；更新 `repeat.once_mode`（"只需一次"）、`repeat.each_mode`（"每次都要"）、`repeat.progress`（"已打卡"）
+
+---
+
+## 修改文件清单（2026-05-30 重复 UI 改进）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/task_item.py` | 编辑 UI：Chip 频率选择 + 带说明的模式选项 |
+| `ui/views/todo_view.py` | 新建任务区同样改为 Chip + 模式选项 + i18n 刷新 |
+| `ui/views/calendar_view.py` | 详情面板标签改进（已打卡/只需一次） |
+| `ui/views/stats_view.py` | 今日待办标签改进 |
+| `ui/i18n.py` | 新增/更新 8 个翻译键 |
+
+---
+
+## 20. 新建任务时设置重复
+
+**问题：** 新建任务时无法设置重复间隔和模式，只能通过 AI 对话或事后编辑。
+
+**实现 `ui/views/todo_view.py`：**
+- 新增 `_new_repeat_days`（数字输入框）和 `_new_repeat_mode`（下拉选择）控件
+- `_new_repeat_row` 行包含标签 + 输入框 + 单位 + 下拉，初始隐藏
+- `_toggle_new_task_picker()` 打开/关闭时同步显示/隐藏重复行
+- `add_clicked()` 读取 repeat 值传递给 `create_task()`，完成后重置
+- `_rebuild_main_labels()` 更新重复设置标签（语言切换）
+
+---
+
+## 修改文件清单（2026-05-30 新建重复更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/todo_view.py` | 新建任务区新增重复设置行 + 传递参数 + 重置 + i18n |
+| `CLAUDE.md` | 更新 UI conventions |
+| `optimize.md` | 追加本次优化记录 |
+
+---
+
+## 22. 聊天助手界面美化
+
+**问题：**
+1. drawer 底部 padding 导致内容偏上，与应用底部不齐
+2. 聊天区域灰色背景 (`PANEL_BG`) 与 drawer 背景不一致，突兀
+3. 打开聊天时无主动问好，用户缺少引导
+4. drawer 阴影太重（`blur_radius=16, opacity=0.25`）
+5. 无快捷操作入口，常用指令需手动输入
+6. 助手设置无预设性格，用户需自行编写 prompt
+
+**实现 `ui/views/todo_view.py`：**
+
+*底部对齐 + 阴影 + 背景：*
+- `padding`: `Padding(16, 12, 16, 16)` → `Padding(16, 12, 16, 0)` 底部不加 padding
+- `shadow`: `blur_radius=16, opacity=0.25` → `blur_radius=8, opacity=0.1, offset=2`
+- 聊天历史 `bgcolor`: `PANEL_BG` → `ft.Colors.SURFACE`
+
+*首次打开问好：*
+- 新增 `_chat_greeted: bool` 状态，标记是否已问好
+- `_toggle_chat_drawer()` 打开时：若未问好，调用 `_append_chat_greeting()`
+- `_append_chat_greeting()`：复用 `_get_greeting()` + 紧急任务摘要逻辑，以助手气泡追加到 chat_history
+- 无紧急任务时显示 emoji 庆祝（移除 box-drawing ASCII art，避免中文/emoji 对齐问题）
+
+*快捷气泡：*
+- 输入框上方新增 `_quick_chips` Row，4 个 `ft.ActionChip`：
+  - "最近七天计划" → 触发 plan_tasks
+  - "我接下来该做什么" → 触发 plan_tasks
+  - "查看所有待办" → 触发 list_tasks
+  - "清除已完成" → 触发 clear completed
+- `_on_quick_chip()` 设置输入值并触发 `handle_user_message`
+
+**实现 `ui/views/settings_view.py`：**
+
+*预设性格：*
+- `PERSONA_PRESETS` 字典：阿喵（猫娘）、阿汪（柴犬）、砖家（学术专家）、小冰（温柔助手）、默认
+- `_build_assistant()` 在聊天人设文本框上方新增 Chip 行
+- `_on_preset_select()` 将对应 prompt 填入 `_chat_prompt_field.value`，标记 dirty 显示保存按钮
+
+**实现 `services/llm_service.py`：**
+- planner system prompt 新增"最近七天计划"示例，识别为 `plan_tasks` action
+
+**实现 `ui/i18n.py`：**
+- 新增 `chat.chip_7day_plan`、`chat.chip_what_next`、`chat.chip_all_tasks`、`chat.chip_clear_done`
+- 新增 `settings.assistant.presets`
+
+---
+
+## 修改文件清单（2026-05-30 聊天美化更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/todo_view.py` | drawer 底部/阴影/背景 + 问好气泡 + 快捷 Chip |
+| `ui/views/settings_view.py` | 预设性格 Chip 行 |
+| `services/llm_service.py` | system prompt 新增七天计划示例 |
+| `ui/i18n.py` | 新增 5 个翻译键 |
+| `CLAUDE.md` | 更新 UI conventions |
+| `README.md` | 更新功能列表 |

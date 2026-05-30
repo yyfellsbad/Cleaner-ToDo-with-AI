@@ -6,13 +6,21 @@ from datetime import date, datetime, timedelta
 
 import flet as ft
 
+from ui.i18n import t
 from ui.theme import AppColors
 
-_WEEKDAY_LABELS = ["一", "二", "三", "四", "五", "六", "日"]
-_MONTH_NAMES = [
-    "", "1月", "2月", "3月", "4月", "5月", "6月",
-    "7月", "8月", "9月", "10月", "11月", "12月",
-]
+
+def _weekday_labels() -> list[str]:
+    s = t("picker.weekdays")
+    return list(s) if len(s) == 7 else ["一", "二", "三", "四", "五", "六", "日"]
+
+
+def _month_names() -> list[str]:
+    parts = t("picker.months").split(",")
+    return [""] + parts if len(parts) == 12 else [
+        "", "1月", "2月", "3月", "4月", "5月", "6月",
+        "7月", "8月", "9月", "10月", "11月", "12月",
+    ]
 
 
 def _has_time(dt: datetime) -> bool:
@@ -143,7 +151,7 @@ class CustomDatePicker(ft.Column):
         # 文本输入
         self._text_field = ft.TextField(
             value="",
-            hint_text="YYYY-MM-DD / 今天 / 明天 / 527",
+            hint_text=t("picker.input_hint"),
             text_size=13,
             content_padding=ft.Padding(10, 6, 10, 6),
             border_radius=8,
@@ -153,7 +161,7 @@ class CustomDatePicker(ft.Column):
 
         # 提示
         self._hint_text = ft.Text(
-            "点击选择日期，再点另一个变为持续",
+            t("picker.range_hint"),
             size=11,
             color=AppColors.TEXT_HINT,
         )
@@ -168,10 +176,10 @@ class CustomDatePicker(ft.Column):
             controls=[
                 self._text_field,
                 ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_size=18,
-                              on_click=self._prev_month, tooltip="上个月"),
+                              on_click=self._prev_month, tooltip=t("picker.prev_month")),
                 self._month_label,
                 ft.IconButton(icon=ft.Icons.CHEVRON_RIGHT, icon_size=18,
-                              on_click=self._next_month, tooltip="下个月"),
+                              on_click=self._next_month, tooltip=t("picker.next_month")),
             ],
         )
 
@@ -182,7 +190,7 @@ class CustomDatePicker(ft.Column):
                 ft.Container(
                     width=36, alignment=ft.Alignment(0, 0),
                     content=ft.Text(d, size=11, color=AppColors.TEXT_HINT, weight=ft.FontWeight.W_500),
-                ) for d in _WEEKDAY_LABELS
+                ) for d in _weekday_labels()
             ],
         )
 
@@ -206,7 +214,10 @@ class CustomDatePicker(ft.Column):
                     controls=[weekday_row, self._grid_column],
                 ),
             ),
-            self._time_container,
+            ft.Container(
+                content=self._time_container,
+                padding=ft.Padding(40, 0, 0, 0),
+            ),
         ]
 
     def _build_hour_dd(self, value: int, on_select) -> ft.Dropdown:
@@ -256,11 +267,11 @@ class CustomDatePicker(ft.Column):
 
             self._time_container.controls = [
                 ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                    ft.Text("开始", size=12, color=AppColors.TEXT_HINT, width=36),
+                    ft.Text(t("picker.start"), size=12, color=AppColors.TEXT_HINT, width=48),
                     self._start_hh, ft.Text(":", size=13, color=AppColors.TEXT_HINT), self._start_mm,
                 ]),
                 ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                    ft.Text("结束", size=12, color=AppColors.TEXT_HINT, width=36),
+                    ft.Text(t("picker.end"), size=12, color=AppColors.TEXT_HINT, width=48),
                     self._end_hh, ft.Text(":", size=13, color=AppColors.TEXT_HINT), self._end_mm,
                 ]),
             ]
@@ -275,11 +286,11 @@ class CustomDatePicker(ft.Column):
             end_label = self._range_end.strftime("%m-%d")
             self._time_container.controls = [
                 ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                    ft.Text(start_label, size=12, color=AppColors.TEXT_HINT, width=36),
+                    ft.Text(start_label, size=12, color=AppColors.TEXT_HINT, width=48),
                     self._start_hh, ft.Text(":", size=13, color=AppColors.TEXT_HINT), self._start_mm,
                 ]),
                 ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                    ft.Text(end_label, size=12, color=AppColors.TEXT_HINT, width=36),
+                    ft.Text(end_label, size=12, color=AppColors.TEXT_HINT, width=48),
                     self._end_hh, ft.Text(":", size=13, color=AppColors.TEXT_HINT), self._end_mm,
                 ]),
             ]
@@ -295,11 +306,11 @@ class CustomDatePicker(ft.Column):
 
             self._time_container.controls = [
                 ft.Row(spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-                    ft.Text("时间", size=12, color=AppColors.TEXT_HINT, width=36),
+                    ft.Text(t("picker.time"), size=12, color=AppColors.TEXT_HINT, width=48),
                     self._start_hh, ft.Text(":", size=13, color=AppColors.TEXT_HINT), self._start_mm,
-                    ft.Text("或", size=11, color=AppColors.TEXT_HINT),
+                    ft.Text(t("picker.or"), size=11, color=AppColors.TEXT_HINT),
                     self._time_input,
-                    ft.IconButton(icon=ft.Icons.CHECK, icon_size=16, tooltip="确认",
+                    ft.IconButton(icon=ft.Icons.CHECK, icon_size=16, tooltip=t("picker.confirm"),
                                   on_click=self._on_time_text_submit),
                 ]),
             ]
@@ -334,7 +345,7 @@ class CustomDatePicker(ft.Column):
                 self._time_input.error_text = None
                 self.update()
                 return
-        self._time_input.error_text = "格式：HH:MM"
+        self._time_input.error_text = t("picker.err_hhmm")
         self.update()
 
     def _sync_time_controls(self):
@@ -378,7 +389,7 @@ class CustomDatePicker(ft.Column):
                     self._fire_change()
                     self.update()
                     return
-            self._text_field.error_text = "格式：开始日期 ~ 结束日期"
+            self._text_field.error_text = t("picker.err_range")
             self.update()
             return
 
@@ -394,14 +405,14 @@ class CustomDatePicker(ft.Column):
             self._text_field.error_text = None
             self._fire_change()
         else:
-            self._text_field.error_text = "日期格式无效"
+            self._text_field.error_text = t("picker.err_invalid")
         self.update()
 
     # ── 日历网格 ──
 
     def _rebuild_grid(self):
         self._grid_column.controls.clear()
-        self._month_label.value = f"{self._view_year}年 {_MONTH_NAMES[self._view_month]}"
+        self._month_label.value = t("picker.month_label", self._view_year, _month_names()[self._view_month])
         cal = calendar.monthcalendar(self._view_year, self._view_month)
         today = date.today()
 

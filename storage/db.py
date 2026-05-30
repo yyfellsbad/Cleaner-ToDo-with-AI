@@ -35,6 +35,12 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE tasks ADD COLUMN end_date TEXT")
     if "description" not in columns:
         connection.execute("ALTER TABLE tasks ADD COLUMN description TEXT DEFAULT ''")
+    if "repeat_days" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN repeat_days INTEGER DEFAULT 0")
+    if "repeat_mode" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN repeat_mode TEXT DEFAULT 'once'")
+    if "completed_dates" not in columns:
+        connection.execute("ALTER TABLE tasks ADD COLUMN completed_dates TEXT DEFAULT '[]'")
     connection.commit()
 
 
