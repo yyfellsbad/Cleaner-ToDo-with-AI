@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import flet as ft
@@ -18,15 +18,27 @@ from flet_charts import (
 
 if TYPE_CHECKING:
     from services.task_service import TaskService
+    from storage.daily_assessment_repo import DailyAssessmentRepo
 
-# ── 颜色常量（莫兰迪色系）────────────────────────────────
-COLOR_DONE = "#8E9AAF"       # 灰蓝
-COLOR_ONGOING = "#A7B5A0"    # 灰绿
-COLOR_EXPIRED = "#C4A882"    # 灰棕
-COLOR_PENDING = "#B8B8B8"    # 中灰
-COLOR_NEW_TREND = "#B5C4D5"     # 浅灰蓝
-COLOR_DONE_TREND = "#B8C9B3"    # 浅灰绿
-COLOR_EXPIRED_TREND = "#D4BFA8"  # 浅灰棕
+# ── 颜色常量（跟随主题）────────────────────────────────
+COLOR_DONE = ft.Colors.TERTIARY
+COLOR_ONGOING = ft.Colors.SECONDARY
+COLOR_EXPIRED = ft.Colors.ERROR
+COLOR_PENDING = ft.Colors.OUTLINE
+COLOR_NEW_TREND = ft.Colors.PRIMARY_CONTAINER
+COLOR_DONE_TREND = ft.Colors.TERTIARY_CONTAINER
+COLOR_EXPIRED_TREND = ft.Colors.ERROR_CONTAINER
+
+# 热力图颜色（跟随主题，基于 GREEN 的透明度阶梯）
+HEAT_COLORS = [
+    None,                                # 0: 使用默认底色
+    ft.Colors.with_opacity(0.15, ft.Colors.GREEN),   # 1: 浅
+    ft.Colors.with_opacity(0.30, ft.Colors.GREEN),   # 2: 中
+    ft.Colors.with_opacity(0.55, ft.Colors.GREEN),   # 3: 深
+    ft.Colors.with_opacity(0.85, ft.Colors.GREEN),   # 4: 满
+]
+HEAT_CELL = 12
+HEAT_GAP = 2
 
 _ANIM_DURATION = 0.75  # 翻滚动画总时长（秒）
 _ANIM_STEPS = 25       # 动画帧数
@@ -35,9 +47,10 @@ _ANIM_STEPS = 25       # 动画帧数
 class StatsView(ft.Column):
     """数据统计页面：概览卡片 + 环状图 + 今日待办 + 7 天趋势。"""
 
-    def __init__(self, task_service: TaskService):
+    def __init__(self, task_service: TaskService, assessment_repo: DailyAssessmentRepo | None = None):
         super().__init__()
         self._task_service = task_service
+        self._assessment_repo = assessment_repo
         self.expand = True
         self.spacing = 0
         self.scroll = ft.ScrollMode.AUTO
@@ -117,16 +130,12 @@ class StatsView(ft.Column):
             ],
         )
 
-        # 今日待办
-        self._today_list = ft.Column(spacing=6)
-        self._today_container = ft.Container(
-            content=ft.Column(
-                controls=[
-                    ft.Text(t("stats.today_tasks"), size=16, weight=ft.FontWeight.W_500),
-                    self._today_list,
-                ],
-                spacing=8,
-            ),
+        # 热力图 + 今日评估（合并卡片）
+        self._heatmap_year = datetime.now().year
+        self._heatmap_cells: dict[str, ft.Container] = {}
+        self._today_assess_chips = ft.Row(spacing=8, wrap=True)
+        self._heatmap_container = ft.Container(
+            content=ft.Column(spacing=4),
             padding=ft.Padding(16, 12, 16, 12),
             border_radius=12,
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
@@ -134,7 +143,7 @@ class StatsView(ft.Column):
             opacity=0,
             animate_opacity=150,
         )
-        self._animated_items.append(self._today_container)
+        self._animated_items.append(self._heatmap_container)
 
         self.controls = [
             ft.Container(
@@ -147,7 +156,7 @@ class StatsView(ft.Column):
                         header,
                         self._cards_row,
                         self._charts_row,
-                        self._today_container,
+                        self._heatmap_container,
                     ],
                 ),
             ),
@@ -173,7 +182,8 @@ class StatsView(ft.Column):
 
         self._build_cards(total, done, rate, expired)
         self._build_donut(done, ongoing, expired, pending, total)
-        self._build_today(tasks, now, today)
+        self._backfill_assessments(tasks, today)
+        self._build_heatmap(today)
         self._build_trend(tasks, today)
 
     # ── 重复任务状态判断 ───────────────────────────────────
@@ -205,7 +215,7 @@ class StatsView(ft.Column):
 
     def _build_cards(self, total, done, rate, expired):
         cards_data = [
-            (ft.Icons.LIST_ALT_ROUNDED, total, t("stats.total"), "#9DA5B4", ""),
+            (ft.Icons.LIST_ALT_ROUNDED, total, t("stats.total"), ft.Colors.OUTLINE, ""),
             (ft.Icons.CHECK_CIRCLE_OUTLINE, done, t("stats.completed"), COLOR_DONE, ""),
             (ft.Icons.PIE_CHART_OUTLINE, rate, t("stats.rate"), COLOR_ONGOING, "%"),
             (ft.Icons.WARNING_AMBER_ROUNDED, expired, t("stats.expired"), COLOR_EXPIRED, ""),
@@ -308,91 +318,318 @@ class StatsView(ft.Column):
         ]
         self._donut_panel.content = self._donut_with_legend
 
-    # ── 今日待办 ─────────────────────────────────────────
+    # ── 热力图 ─────────────────────────────────────────
 
-    def _build_today(self, tasks, now, today):
-        today_tasks = []
-        for tk in tasks:
-            if tk.repeat_mode == "each" and tk.is_recurring:
-                start = tk.date.date()
-                end = tk.end_date.date()
-                if start <= today <= end:
-                    diff = (today - start).days
-                    if diff % tk.repeat_days == 0 and not tk.occurrence_done(today):
-                        today_tasks.append(tk)
-            elif not tk.completed:
-                if tk.date.date() == today or (
-                    tk.end_date and tk.date.date() <= today <= tk.end_date.date()
-                ):
-                    today_tasks.append(tk)
-
-        if not today_tasks:
-            self._today_list.controls = [
-                ft.Container(
-                    padding=ft.Padding(0, 16, 0, 16),
-                    alignment=ft.Alignment.CENTER,
-                    content=ft.Text(
-                        t("stats.no_today"),
-                        size=13,
-                        color=ft.Colors.ON_SURFACE_VARIANT,
-                    ),
-                )
-            ]
+    def _backfill_assessments(self, tasks, today: date):
+        """自动回填未手动评估的历史日期（当年）。"""
+        if not self._assessment_repo:
             return
+        year_start = date(today.year, 1, 1)
+        existing = self._assessment_repo.get_range(
+            year_start.isoformat(), today.isoformat()
+        )
+        assessed = {r["date"] for r in existing if r["manual"] == 1}
 
-        items = []
-        for tk in today_tasks:
-            if tk.end_date and tk.date <= now <= tk.end_date:
-                tag_color = COLOR_ONGOING
-                tag_text = t("stats.in_progress")
-            elif tk.date.date() == today:
-                tag_color = ft.Colors.ORANGE
-                tag_text = t("stats.today_tag")
-            else:
-                tag_color = ft.Colors.GREY
-                tag_text = t("stats.pending_tag")
-
-            time_str = tk.date.strftime("%H:%M") if tk.date.hour or tk.date.minute else ""
-
-            repeat_suffix = ""
-            if tk.repeat_days > 0:
-                repeat_suffix = f" · {t('repeat.every_day') if tk.repeat_days == 1 else t('repeat.every_n_days', tk.repeat_days)}"
+        d = year_start
+        while d <= today:
+            ds = d.isoformat()
+            if ds in assessed:
+                d += timedelta(days=1)
+                continue
+            # 统计当天应完成和已完成的任务数
+            should = 0
+            completed = 0
+            for tk in tasks:
                 if tk.repeat_mode == "each" and tk.is_recurring:
-                    done = len(tk.completed_dates)
-                    repeat_suffix += f" · {t('repeat.progress', done, len(tk.repeat_occurrences))}"
+                    occurrences = tk.repeat_occurrences
+                    if d in occurrences:
+                        should += 1
+                        if tk.occurrence_done(d):
+                            completed += 1
                 else:
-                    repeat_suffix += f" · {t('repeat.once_mode')}"
+                    task_start = tk.date.date()
+                    task_end = tk.end_date.date() if tk.end_date else task_start
+                    if task_start <= d <= task_end:
+                        should += 1
+                        if tk.completed:
+                            completed += 1
+            if should > 0:
+                ratio = completed / should
+                if ratio >= 0.76:
+                    score = 4
+                elif ratio >= 0.51:
+                    score = 3
+                elif ratio >= 0.26:
+                    score = 2
+                else:
+                    score = 1
+                self._assessment_repo.upsert(ds, score, 0)
+            d += timedelta(days=1)
 
-            items.append(
-                ft.Container(
-                    padding=ft.Padding(10, 8, 10, 8),
-                    border_radius=8,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                    content=ft.Row(
-                        controls=[
-                            ft.Text(f"{tk.name}{repeat_suffix}", size=13, expand=True),
-                            *(
-                                [ft.Text(time_str, size=12, color=ft.Colors.ON_SURFACE_VARIANT)]
-                                if time_str
-                                else []
-                            ),
-                            ft.Container(
-                                padding=ft.Padding(6, 2, 6, 2),
-                                border_radius=4,
-                                bgcolor=tag_color,
-                                content=ft.Text(
-                                    tag_text,
-                                    size=10,
-                                    color=ft.Colors.WHITE,
-                                    weight=ft.FontWeight.W_500,
-                                ),
-                            ),
-                        ],
-                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    ),
-                )
+    def _build_heatmap(self, today: date):
+        """构建全年热力图 + 今日评估合并卡片。"""
+        year = self._heatmap_year
+        is_current_year = year == today.year
+
+        # 全年日期范围
+        jan1 = date(year, 1, 1)
+        dec31 = date(year, 12, 31)
+
+        # 读取评估数据（整年）
+        assessments: dict[str, int] = {}
+        if self._assessment_repo:
+            rows = self._assessment_repo.get_range(
+                jan1.isoformat(), dec31.isoformat()
             )
-        self._today_list.controls = items
+            assessments = {r["date"]: r["score"] for r in rows}
+
+        # 星期标签
+        weekday_labels = t("stats.heatmap_weekdays").split(",")
+
+        # 1月1日所在周的周一
+        first_monday = jan1 - timedelta(days=jan1.weekday())
+
+        # 构建网格列（按周分组）
+        self._heatmap_cells.clear()
+        columns: list[ft.Control] = []
+        month_labels: list[ft.Control] = []
+        prev_month = -1
+        week_start = first_monday
+
+        while week_start <= dec31:
+            # 月份标签：该周第一天跨月时显示
+            display_month = week_start if week_start >= jan1 else jan1
+            if display_month.month != prev_month:
+                month_labels.append(
+                    ft.Container(
+                        width=HEAT_CELL,
+                        content=ft.Text(
+                            t("stats.heatmap_month", display_month.month),
+                            size=9,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                        ),
+                    )
+                )
+                prev_month = display_month.month
+            else:
+                month_labels.append(ft.Container(width=HEAT_CELL))
+
+            # 该周的 7 天
+            day_cells = []
+            for wd in range(7):
+                cell_date = week_start + timedelta(days=wd)
+                if cell_date < jan1 or cell_date > dec31:
+                    day_cells.append(ft.Container(width=HEAT_CELL, height=HEAT_CELL))
+                    continue
+
+                ds = cell_date.isoformat()
+                score = assessments.get(ds, 0)
+                is_future = cell_date > today
+
+                if is_future:
+                    bg = ft.Colors.SURFACE_CONTAINER_HIGHEST
+                    tooltip = ds
+                    clickable = False
+                elif score > 0:
+                    bg = HEAT_COLORS[score]
+                    tooltip = f"{ds}: {score * 25}%"
+                    clickable = True
+                else:
+                    bg = ft.Colors.SURFACE_CONTAINER_HIGHEST
+                    tooltip = f"{ds}: 0%"
+                    clickable = True
+
+                cell = ft.Container(
+                    width=HEAT_CELL,
+                    height=HEAT_CELL,
+                    border_radius=3,
+                    bgcolor=bg,
+                    data=ds,
+                    on_click=self._on_heatmap_click if clickable else None,
+                    tooltip=tooltip,
+                )
+                self._heatmap_cells[ds] = cell
+                day_cells.append(cell)
+
+            col = ft.Column(spacing=HEAT_GAP, controls=day_cells)
+            columns.append(col)
+            week_start += timedelta(days=7)
+
+        # 月份标签对齐（补齐到与 columns 等长）
+        while len(month_labels) < len(columns):
+            month_labels.append(ft.Container(width=HEAT_CELL))
+
+        month_row = ft.Row(spacing=HEAT_GAP, controls=month_labels)
+
+        # 星期标签列
+        label_col = ft.Column(
+            spacing=HEAT_GAP,
+            controls=[
+                ft.Container(
+                    width=20,
+                    height=HEAT_CELL,
+                    alignment=ft.Alignment(1, 0),
+                    content=ft.Text(lb, size=9, color=ft.Colors.ON_SURFACE_VARIANT),
+                )
+                for lb in weekday_labels
+            ],
+        )
+
+        # 可滚动的网格区域
+        grid_scroll = ft.Row(
+            spacing=0,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            controls=[label_col, ft.Container(width=4), ft.Row(spacing=HEAT_GAP, controls=columns, scroll=ft.ScrollMode.AUTO)],
+        )
+
+        # 年份导航
+        year_nav = ft.Row(
+            spacing=8,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.IconButton(ft.Icons.CHEVRON_LEFT, icon_size=18, on_click=self._on_year_prev),
+                ft.Text(f"{year}", size=16, weight=ft.FontWeight.W_600),
+                ft.IconButton(ft.Icons.CHEVRON_RIGHT, icon_size=18, on_click=self._on_year_next),
+                ft.Container(expand=True),
+                ft.Text(t("stats.heatmap_title"), size=14, weight=ft.FontWeight.W_500, color=ft.Colors.ON_SURFACE_VARIANT),
+            ],
+        )
+
+        # 今日评估区域
+        today_str = today.isoformat()
+        current = self._assessment_repo.get(today_str) if self._assessment_repo else None
+        current_score = current["score"] if current else 0
+        is_manual = current and current.get("manual") == 1
+
+        score_labels = [
+            (0, t("stats.assess_0")),
+            (1, t("stats.assess_1")),
+            (2, t("stats.assess_2")),
+            (3, t("stats.assess_3")),
+            (4, t("stats.assess_4")),
+        ]
+
+        self._today_assess_chips.controls = [
+            ft.Chip(
+                label=ft.Text(label, size=12),
+                data=score_val,
+                selected=(score_val == current_score),
+                on_click=self._on_today_assess,
+            )
+            for score_val, label in score_labels
+        ]
+
+        hint_text = t("stats.assess_today_done") if is_manual else t("stats.assess_today_hint")
+
+        today_section = ft.Column(
+            spacing=6,
+            controls=[
+                ft.Divider(),
+                ft.Row(
+                    controls=[
+                        ft.Text(t("stats.assess_today_title"), size=14, weight=ft.FontWeight.W_500),
+                        ft.Container(expand=True),
+                        ft.Text(hint_text, size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+                    ],
+                ),
+                self._today_assess_chips,
+            ],
+        )
+
+        # 组装整个卡片
+        self._heatmap_container.content = ft.Column(
+            spacing=8,
+            controls=[
+                year_nav,
+                month_row,
+                grid_scroll,
+                today_section,
+            ],
+        )
+
+    def _on_year_prev(self, e):
+        self._heatmap_year -= 1
+        self._build_heatmap(datetime.now().date())
+        self.update()
+
+    def _on_year_next(self, e):
+        self._heatmap_year += 1
+        self._build_heatmap(datetime.now().date())
+        self.update()
+
+    def _on_today_assess(self, e):
+        score_val = e.control.data
+        today_str = datetime.now().date().isoformat()
+        if not self._assessment_repo:
+            return
+        self._assessment_repo.upsert(today_str, score_val, 1)
+        self._build_heatmap(datetime.now().date())
+        self.page.update()
+
+    def _on_heatmap_click(self, e):
+        """点击历史日期方块，弹出判定对话框。"""
+        date_str = e.control.data
+        if not date_str or not self._assessment_repo:
+            return
+        current = self._assessment_repo.get(date_str)
+        current_score = current["score"] if current else 0
+        self._show_assess_dialog(date_str, current_score)
+
+    def _show_assess_dialog(self, date_str: str, current_score: int):
+        """弹出历史日期完成度判定对话框。"""
+        score_labels = [
+            (0, t("stats.assess_0")),
+            (1, t("stats.assess_1")),
+            (2, t("stats.assess_2")),
+            (3, t("stats.assess_3")),
+            (4, t("stats.assess_4")),
+        ]
+        selected_score = {"value": current_score}
+
+        def on_select(e):
+            selected_score["value"] = e.control.data
+            for chip in chip_row.controls:
+                chip.selected = chip.data == selected_score["value"]
+            dialog.update()
+
+        chip_row = ft.Row(
+            spacing=8,
+            wrap=True,
+            controls=[
+                ft.Chip(
+                    label=ft.Text(label, size=12),
+                    data=score,
+                    selected=(score == current_score),
+                    on_click=on_select,
+                )
+                for score, label in score_labels
+            ],
+        )
+
+        def on_confirm(e):
+            self._assessment_repo.upsert(date_str, selected_score["value"], 1)
+            self.page.pop_dialog()
+            # 重建热力图以反映变更
+            self._build_heatmap(datetime.now().date())
+            self.page.update()
+
+        dialog = ft.AlertDialog(
+            title=ft.Text(t("stats.assess_title", date_str)),
+            content=ft.Column(
+                spacing=12,
+                controls=[
+                    ft.Text(t("stats.assess_hint"), size=13, color=ft.Colors.ON_SURFACE_VARIANT),
+                    chip_row,
+                ],
+                tight=True,
+            ),
+            actions=[
+                ft.TextButton(t("dialog.cancel"), on_click=lambda e: self.page.pop_dialog()),
+                ft.FilledButton(t("picker.confirm"), on_click=on_confirm),
+            ],
+            actions_alignment=ft.MainAxisAlignment.END,
+        )
+        self.page.show_dialog(dialog)
 
     # ── 7 天趋势 ─────────────────────────────────────────
 
@@ -547,8 +784,8 @@ class StatsView(ft.Column):
 
         await asyncio.sleep(0.08)
 
-        # 今日待办
-        self._today_container.opacity = 1
+        # 热力图 + 今日评估
+        self._heatmap_container.opacity = 1
         self.update()
 
         # 数字翻滚
@@ -580,3 +817,17 @@ class StatsView(ft.Column):
         self.update()
         self._load_data()
         asyncio.ensure_future(self._reveal())
+        self._schedule_midnight_refresh()
+
+    def _schedule_midnight_refresh(self):
+        """每天 0 点自动刷新，进入下一天评估。"""
+        async def _wait_and_refresh():
+            while True:
+                now = datetime.now()
+                tomorrow = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                seconds = (tomorrow - now).total_seconds()
+                await asyncio.sleep(seconds)
+                self._heatmap_year = datetime.now().year
+                self.refresh_data()
+        if not hasattr(self, '_midnight_task') or self._midnight_task.done():
+            self._midnight_task = asyncio.ensure_future(_wait_and_refresh())

@@ -15,10 +15,11 @@ from ui.theme import AppColors, ThemeManager
 
 
 class TodoApp(ft.Column):
-    def __init__(self, theme_manager: ThemeManager, repo=None, config_manager=None):
+    def __init__(self, theme_manager: ThemeManager, repo=None, config_manager=None, assessment_repo=None):
         super().__init__()
         self.tm = theme_manager
         self._config_manager = config_manager
+        self._assessment_repo = assessment_repo
         self.show_settings = False
         self.show_stats = False
         self.show_calendar = False
@@ -99,7 +100,7 @@ class TodoApp(ft.Column):
             SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views)
         ]
         # 重建统计视图
-        new_stats = StatsView(self.task_service)
+        new_stats = StatsView(self.task_service, self._assessment_repo)
         new_stats.visible = self.show_stats
         self._content_column.controls.remove(self.stats_view)
         self.stats_view = new_stats
@@ -697,7 +698,7 @@ class TodoApp(ft.Column):
         # ── 统计视图 ──
         from ui.views.stats_view import StatsView
 
-        self.stats_view = StatsView(self.task_service)
+        self.stats_view = StatsView(self.task_service, self._assessment_repo)
         self.stats_view.visible = self.show_stats
 
         # ── 日历视图 ──

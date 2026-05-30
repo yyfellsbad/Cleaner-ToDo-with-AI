@@ -3,6 +3,7 @@ from pathlib import Path
 import flet as ft
 
 from services.llm_config_manager import LLMConfigManager
+from storage.daily_assessment_repo import DailyAssessmentRepo
 from storage.setting_repo import SettingRepo
 from ui.theme import ThemeManager
 from ui.views.todo_view import TodoApp
@@ -34,7 +35,10 @@ def main(page: ft.Page):
     llm_cfg = LLMConfigManager.instance()
     llm_cfg.load(repo)
 
-    page.add(TodoApp(tm, repo, llm_cfg))
+    # 初始化每日评估存储
+    assessment_repo = DailyAssessmentRepo()
+
+    page.add(TodoApp(tm, repo, llm_cfg, assessment_repo))
 
 
 if __name__ == "__main__":

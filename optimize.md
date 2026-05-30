@@ -706,3 +706,57 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/i18n.py` | 新增 5 个翻译键 |
 | `CLAUDE.md` | 更新 UI conventions |
 | `README.md` | 更新功能列表 |
+
+---
+
+## 23. GitHub 风格热力图 + 每日完成度判定
+
+**问题：** 统计页"今日待办"列表信息密度低，无法直观看到历史任务完成情况。
+
+**实现 `storage/daily_assessment_repo.py`（全新）：**
+- `daily_assessments` 表：`date TEXT PRIMARY KEY, score INTEGER, manual INTEGER`
+- `score`: 0-4（0=无活动, 1=1-25%, 2=26-50%, 3=51-75%, 4=76-100%）
+- `manual`: 0=自动计算, 1=用户手动设定
+- 方法：`get(date)`、`get_range(start, end)`、`upsert(date, score, manual)`
+- 遵循 `setting_repo.py` 模式，构造函数中 `_ensure_table()`
+
+**改造 `ui/views/stats_view.py`：**
+- 删除 `_build_today()` 方法，替换为 `_build_heatmap()`
+- 热力图 + 今日评估合并为一张卡片
+- 热力图显示全年 365 天（12×12px 方块），含未来日期（浅灰底色）
+- 年份切换：`[◀] 2026 [▶]` 导航按钮
+- 顶部月份标签，左侧星期标签（一~日），网格支持水平滚动
+- 今日评估区域在热力图下方，直接点击 Chip 选择完成度
+- 用户评估后热力图方格颜色即时更新（无需刷新）
+- 历史日期点击弹出判定对话框，确认后方格颜色即时更新
+- `_backfill_assessments()`: 打开统计页时自动回填当年未手动评估的历史日期
+  - 统计每天应完成/已完成任务数，按比例映射 score
+  - `manual=1` 的记录不覆盖
+- `_schedule_midnight_refresh()`: 每天 0 点自动刷新进入下一天评估
+
+**改造 `app.py`：**
+- 实例化 `DailyAssessmentRepo()`，传给 `TodoApp`
+
+**改造 `ui/views/todo_view.py`：**
+- `TodoApp.__init__` 新增 `assessment_repo` 参数
+- `StatsView` 构造传入 `assessment_repo`
+
+**i18n 新增：**
+- `stats.heatmap_title`、`stats.heatmap_weekdays`、`stats.heatmap_month`
+- `stats.assess_title`、`stats.assess_hint`、`stats.assess_0`~`stats.assess_4`
+- `stats.assess_today_title`、`stats.assess_today_hint`、`stats.assess_today_done`
+
+---
+
+## 修改文件清单（2026-05-30 热力图更新）
+
+| 文件 | 变更类型 |
+|---|---|
+| `storage/daily_assessment_repo.py` | **新增**：每日完成度评估存储 |
+| `ui/views/stats_view.py` | 删除今日待办，新增热力图 + 判定对话框 + 自动回填 |
+| `app.py` | 实例化 DailyAssessmentRepo，传给 TodoApp |
+| `ui/views/todo_view.py` | 接收 assessment_repo，传给 StatsView |
+| `ui/i18n.py` | 新增 11 个热力图/判定翻译键 |
+| `CLAUDE.md` | 更新 stats 描述 + key files |
+| `README.md` | 更新统计功能 + 项目结构 |
+| `optimize.md` | 追加本次优化记录 |

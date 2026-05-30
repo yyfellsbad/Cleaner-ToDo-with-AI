@@ -180,7 +180,6 @@ MESSAGES: dict[str, dict[str, str]] = {
     # ── Stats ──────────────────────────────────────────────
     "stats.title": {"zh": "数据统计", "en": "Statistics"},
     "stats.refresh": {"zh": "刷新", "en": "Refresh"},
-    "stats.today_tasks": {"zh": "今日待办", "en": "Today's Tasks"},
     "stats.total": {"zh": "总任务", "en": "Total"},
     "stats.completed": {"zh": "已完成", "en": "Completed"},
     "stats.rate": {"zh": "完成率", "en": "Rate"},
@@ -195,6 +194,21 @@ MESSAGES: dict[str, dict[str, str]] = {
     "stats.trend_completed": {"zh": "完成", "en": "Completed"},
     "stats.trend_expired": {"zh": "过期", "en": "Expired"},
     "stats.trend_title": {"zh": "近 7 天趋势", "en": "7-Day Trend"},
+
+    # ── Heatmap ─────────────────────────────────────────────
+    "stats.heatmap_title": {"zh": "任务活动", "en": "Activity"},
+    "stats.heatmap_weekdays": {"zh": "一,二,三,四,五,六,日", "en": "Mon,Tue,Wed,Thu,Fri,Sat,Sun"},
+    "stats.heatmap_month": {"zh": "{}月", "en": "{}"},
+    "stats.assess_title": {"zh": "{} 完成度评估", "en": "{} Completion"},
+    "stats.assess_hint": {"zh": "选择当天的完成情况：", "en": "Select completion level:"},
+    "stats.assess_0": {"zh": "未完成", "en": "None"},
+    "stats.assess_1": {"zh": "25%", "en": "25%"},
+    "stats.assess_2": {"zh": "50%", "en": "50%"},
+    "stats.assess_3": {"zh": "75%", "en": "75%"},
+    "stats.assess_4": {"zh": "全部完成", "en": "100%"},
+    "stats.assess_today_title": {"zh": "今日完成度", "en": "Today's Completion"},
+    "stats.assess_today_hint": {"zh": "点击评估今天的完成情况：", "en": "Tap to assess today:"},
+    "stats.assess_today_done": {"zh": "已评估 ✓", "en": "Assessed ✓"},
 
     # ── Calendar view ───────────────────────────────────────
     "calendar.title": {"zh": "日历", "en": "Calendar"},
