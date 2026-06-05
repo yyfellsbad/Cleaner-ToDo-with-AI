@@ -976,3 +976,122 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `CLAUDE.md` | 更新 UI conventions |
 | `optimize.md` | 追加优化记录 |
 | `人机交互技术体现.md` | **新增** — 人机交互技术分析文档 |
+
+---
+
+## 35. CustomDatePicker 两列布局
+
+**问题：** 创建/修改任务时的日历选择器（CustomDatePicker）是单列布局，日历和时间选择、重复设置纵向排列，占用过多垂直空间。
+
+**实现 `ui/components/date_picker.py`：**
+- `_build()` 重构为两列布局：左侧 = 日历网格（expand=True），右侧 = 文本输入 + 提示 + 时间选择 + 额外控件（expand=True）
+- 新增 `extra_controls` 构造参数，允许调用方注入额外控件到右列
+- 月份导航移至日历列顶部居中
+- 下拉框宽度从 110px 缩至 90px，适配右列空间
+
+**实现 `ui/views/todo_view.py`：**
+- 重复选项行（`_new_repeat_row`）通过 `extra_controls=[self._new_repeat_row]` 注入日期选择器右列
+- 创建顺序调整：先构建重复行，再创建 CustomDatePicker
+
+**效果：** 日历选择器左右分列，日历和设置并排显示，空间利用更高效。
+
+---
+
+## 36. 任务卡片拖动圆角修复
+
+**问题：** 拖动任务卡片时，卡片本身是圆角，但拖拽代理的背景是方角，视觉违和。
+
+**实现 `ui/components/task_item.py`：**
+- `Task.__init__` 添加 `border_radius=12` 和 `clip_behavior=ft.ClipBehavior.ANTI_ALIAS`
+- Flet 的 ReorderableListView 拖拽代理会继承控件的圆角和裁剪属性
+
+**效果：** 拖动卡片时圆角边角不再露出方角背景。
+
+---
+
+## 37. 移除重复模式选择
+
+**问题：** 重复任务需要选择模式（只需一次 / 每次都要），增加了不必要的复杂度。语义上"重复"本身就隐含"每次都要"，"不重复"隐含"只需一次"。
+
+**实现 `ui/components/task_item.py`：**
+- 删除所有模式选择 UI：`_edit_mode_once`、`_edit_mode_each`、`_edit_mode_desc`、`_edit_mode_row`
+- 删除 `_on_mode_select`、`_sync_mode_ui`、`_get_edit_repeat_mode` 方法
+- `save_clicked` 直接设置 `self.repeat_mode = "each"`
+
+**实现 `ui/views/todo_view.py`：**
+- 删除新建任务时的模式选择：`_new_mode_once`、`_new_mode_each`、`_new_mode_desc`、`_new_mode_row`
+- 删除 `_on_new_mode_select` 方法
+- `_get_new_repeat_mode()` 简化为始终返回 `"each"`
+- `_rebuild_main_labels` 不再更新模式标签
+
+**效果：** 选择重复后直接生效，无需再选模式，交互步骤减少。
+
+---
+
+## 38. 进度条恢复与六级色阶
+
+**问题：** 进度条在之前的 git 回滚中丢失；原有三级色阶变化不够细腻。
+
+**实现 `ui/components/task_item.py`：**
+- 有 `end_date` 且未完成的任务显示进度条
+- 进度 = (当前时间 - 开始时间) / (结束时间 - 开始时间)
+- 六级色阶：
+  - < 30%：PRIMARY（蓝）
+  - 30-45%：TEAL（青）
+  - 45-60%：AMBER（琥珀）
+  - 60-75%：ORANGE（橙）
+  - 75-90%：DEEP_ORANGE（深橙）
+  - ≥ 90%：ERROR（红）
+- 进度条高度 3px，圆角 2px
+
+**效果：** 持续任务显示时间进度条，颜色随进度平滑过渡，临近截止时变红。
+
+---
+
+## 39. taste-skill 设计原则优化
+
+**问题：** 应用视觉细节（阴影、圆角、标签样式、间距）不够精致，参照 taste-skill 设计系统进行选择性优化。
+
+**实现方案（仅改视觉样式，不改功能逻辑）：**
+
+### A. 阴影扩散化
+- **task_item.py**：hover 阴影 `blur_radius=8, opacity=0.1, offset=2` → `blur_radius=20, opacity=0.06, offset=Offset(0, 4)`
+- **calendar_view.py**：grid_card / detail_card `blur_radius=20, opacity=0.04, offset=Offset(0, 4)`
+- **todo_view.py**：聊天抽屉 `blur_radius=8, opacity=0.1` → `blur_radius=16, opacity=0.06`
+
+### B. 圆角统一 12px
+- **task_item.py**：卡片 border_radius 10→12
+- **calendar_view.py**：grid_card / detail_card border_radius 16→12
+
+### C. 状态标签 pill 化
+- **task_item.py**：completed_tag / expired_tag `border_radius=4` → `border_radius=10`，padding 对称化
+
+### D. 卡片内间距优化
+- **task_item.py**：`padding=Padding(28, 8, 40, 8)` → `Padding(20, 12, 20, 12)`（对称、舒适）
+
+### E. 边框 whisper 化
+- **task_item.py**：卡片边框改为 `ft.Border.all(1, with_opacity(0.5, OUTLINE_VARIANT))`
+
+**效果：** 阴影更柔和扩散，圆角统一，标签胶囊化，间距对称，边框若有若无——整体视觉更精致。
+
+---
+
+## 40. .agents/ 加入 .gitignore
+
+**问题：** `npx skills` 安装的 skill 文件存放在 `.agents/` 目录，不应提交到版本控制。
+
+**实现 `.gitignore`：** 添加 `.agents/` 和 `skills-lock.json`
+
+**效果：** skill 安装产物不被 git 跟踪。
+
+---
+
+## 修改文件清单（2026-06-05 UI优化 完整）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/date_picker.py` | 两列布局 + extra_controls 参数 |
+| `ui/components/task_item.py` | 拖动圆角修复、模式选择移除、进度条恢复+六级色阶、taste-skill 样式优化 |
+| `ui/views/todo_view.py` | 模式选择移除、重复选项注入 picker 右列、抽屉阴影优化 |
+| `ui/views/calendar_view.py` | 阴影+圆角优化 |
+| `.gitignore` | 添加 .agents/、skills-lock.json |

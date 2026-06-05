@@ -17,3 +17,4 @@ venv/
 Thumbs.db
 *.pyc
 skills-lock.json
+CLAUDE.md
