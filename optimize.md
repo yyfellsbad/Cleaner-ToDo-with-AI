@@ -871,13 +871,108 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 
 ---
 
-## 修改文件清单（2026-06-05 人机交互优化）
+## 28. 热力图hover效果
+
+**问题：** 热力图单元格缺乏交互反馈，用户无法直观感知可点击区域。
+
+**实现 `ui/views/stats_view.py`：**
+- 单元格添加 `on_hover` 回调
+- 悬停时边框变为 PRIMARY 色（1.5px），离开时恢复透明
+- 单元格 data 改为 dict 格式存储日期和背景色
+
+**效果：** 鼠标悬停时单元格边框高亮，增强可交互感。
+
+---
+
+## 29. 页面切换过渡动画
+
+**问题：** 视图切换时内容瞬间切换，缺乏过渡感。
+
+**实现 `ui/views/todo_view.py`：**
+- `_sync_content_views` 改为 async 方法
+- 切换前内容区淡出（opacity 0, 150ms）
+- 切换可见性后内容区淡入（opacity 1, 150ms）
+- 所有调用方改为 async/await
+
+**效果：** 视图切换有平滑的淡入淡出过渡。
+
+---
+
+## 30. 任务进度条
+
+**问题：** 持续任务无法直观看到时间进度。
+
+**实现 `ui/components/task_item.py`：**
+- 有 end_date 且未完成的任务显示进度条
+- 进度 = (当前时间 - 开始时间) / (结束时间 - 开始时间)
+- 颜色随进度变化：<70% PRIMARY，70-90% ORANGE，≥90% ERROR
+- 进度条高度 3px，圆角 2px
+
+**效果：** 持续任务卡片下方显示时间进度条，临近截止时颜色变红。
+
+---
+
+## 31. 移除聊天抽屉透明度变化
+
+**问题：** 打开聊天抽屉时内容区变半透明，视觉干扰大于帮助。
+
+**实现 `ui/views/todo_view.py`：**
+- 移除 `_toggle_chat_drawer` 中 `self._content_column.opacity = 0.5` 相关代码
+- 抽屉开关仅控制抽屉自身透明度
+
+**效果：** 打开聊天抽屉时内容区保持不变，减少视觉干扰。
+
+---
+
+## 32. 空状态插图
+
+**问题：** 无任务时任务列表空白，用户不知道如何操作。
+
+**实现 `ui/views/todo_view.py`, `ui/i18n.py`：**
+- `_build_empty_state()` 方法：显示图标 + 引导文字
+- 使用 `ft.Stack` 将空状态叠加在任务列表上方
+- `before_update` 中根据可见任务数显示/隐藏空状态
+- 新增 i18n 键：`empty.no_tasks`, `empty.add_hint`
+
+**效果：** 无任务时显示"暂无待办任务"+"在上方输入框添加新任务"引导。
+
+---
+
+## 33. 任务列表加载动画
+
+**问题：** 任务列表加载时瞬间显示所有任务，缺乏动态感。
+
+**实现 `ui/views/todo_view.py`：**
+- `load_tasks` 新增 `animate` 参数
+- `_animate_task_list()` 方法：任务卡片依次淡入，30ms间隔
+- `did_mount` 中触发动画
+
+**效果：** 应用启动时任务卡片依次淡入，增强加载感。
+
+---
+
+## 34. 深浅模式适配
+
+**问题：** Toast通知在浅色模式下背景和文字颜色相近，看不清。
+
+**实现 `ui/views/todo_view.py`：**
+- 背景色改为 `SURFACE_CONTAINER_HIGHEST`（深浅模式自适应）
+- 添加 `OUTLINE_VARIANT` 边框增加层次感
+- 文字色改为 `ON_SURFACE`（深浅模式自适应）
+
+**效果：** Toast在深色/浅色模式下都有良好的可读性。
+
+---
+
+## 修改文件清单（2026-06-05 人机交互优化 完整）
 
 | 文件 | 变更类型 |
 |---|---|
-| `ui/components/task_item.py` | 添加入场/退出动画、hover阴影、完成高亮动画 |
-| `ui/views/todo_view.py` | Toast通知、侧边栏选中指示、键盘快捷键、聊天气泡动画 |
-| `ui/i18n.py` | 新增 3 个 toast 通知键 |
+| `ui/components/task_item.py` | 入场/退出动画、hover阴影、完成高亮、进度条 |
+| `ui/views/todo_view.py` | Toast通知、侧边栏指示、键盘快捷键、气泡动画、页面过渡、空状态、列表加载动画 |
+| `ui/views/stats_view.py` | 热力图hover效果 |
+| `ui/i18n.py` | 新增 5 个键（3 toast + 2 empty state） |
 | `app.py` | 注册键盘快捷键处理器 |
 | `CLAUDE.md` | 更新 UI conventions |
+| `optimize.md` | 追加优化记录 |
 | `人机交互技术体现.md` | **新增** — 人机交互技术分析文档 |

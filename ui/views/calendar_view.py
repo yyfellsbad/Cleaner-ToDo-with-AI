@@ -217,13 +217,13 @@ class CalendarView(ft.Column):
         grid_card = ft.Container(
             margin=ft.Margin(16, 8, 16, 0),
             padding=ft.Padding(0, 30, 0, 30),
-            border_radius=16,
+            border_radius=12,
             bgcolor=ft.Colors.SURFACE,
             shadow=ft.BoxShadow(
                 spread_radius=0,
-                blur_radius=12,
-                color=ft.Colors.with_opacity(0.12, ft.Colors.BLACK),
-                offset=ft.Offset(0, 3),
+                blur_radius=20,
+                color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                offset=ft.Offset(0, 4),
             ),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             content=ft.Column(
@@ -240,13 +240,13 @@ class CalendarView(ft.Column):
         detail_card = ft.Container(
             expand=True,
             margin=ft.Margin(16, 12, 16, 8),
-            border_radius=16,
+            border_radius=12,
             bgcolor=ft.Colors.SURFACE,
             shadow=ft.BoxShadow(
                 spread_radius=0,
-                blur_radius=12,
-                color=ft.Colors.with_opacity(0.12, ft.Colors.BLACK),
-                offset=ft.Offset(0, 3),
+                blur_radius=20,
+                color=ft.Colors.with_opacity(0.04, ft.Colors.BLACK),
+                offset=ft.Offset(0, 4),
             ),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             content=self._detail_panel,

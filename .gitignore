@@ -9,9 +9,11 @@ __pycache__/
 .venv/
 venv/
 .claude/
+.agents/
 .vscode/
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
 *.pyc
+skills-lock.json

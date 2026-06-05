@@ -35,12 +35,14 @@ class CustomDatePicker(ft.Column):
         selected: date | datetime | None = None,
         on_change=None,
         show_time: bool = False,
+        extra_controls: list | None = None,
     ):
         super().__init__()
         self.spacing = 4
         self.tight = True
         self.on_change = on_change
         self.show_time = show_time
+        self._extra_controls = extra_controls or []
 
         # 日期状态
         self._range_start: date | None = None
@@ -170,11 +172,11 @@ class CustomDatePicker(ft.Column):
         self._month_label = ft.Text("", size=14, weight=ft.FontWeight.W_500)
         self._grid_column = ft.Column(spacing=2, tight=True)
 
-        input_row = ft.Row(
+        nav_row = ft.Row(
             spacing=4,
+            alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                self._text_field,
                 ft.IconButton(icon=ft.Icons.CHEVRON_LEFT, icon_size=18,
                               on_click=self._prev_month, tooltip=t("picker.prev_month")),
                 self._month_label,
@@ -201,22 +203,43 @@ class CustomDatePicker(ft.Column):
         self._sync_text()
         self._rebuild_time_row()
 
-        self.controls = [
-            input_row,
-            self._hint_text,
-            ft.Container(
-                padding=ft.Padding(4, 0, 4, 4),
-                border_radius=8,
-                bgcolor=AppColors.PANEL_BG,
-                content=ft.Column(
-                    spacing=2, tight=True,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[weekday_row, self._grid_column],
-                ),
+        # 左列：日历网格
+        calendar_col = ft.Container(
+            expand=True,
+            padding=ft.Padding(4, 0, 4, 4),
+            border_radius=8,
+            bgcolor=AppColors.PANEL_BG,
+            content=ft.Column(
+                spacing=2, tight=True,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[nav_row, weekday_row, self._grid_column],
             ),
-            ft.Container(
-                content=self._time_container,
-                padding=ft.Padding(40, 0, 0, 0),
+        )
+
+        # 右列：输入、提示、时间、额外控件
+        right_controls = [
+            self._text_field,
+            self._hint_text,
+            ft.Divider(height=1),
+            self._time_container,
+        ]
+        right_controls.extend(self._extra_controls)
+
+        right_col = ft.Container(
+            expand=True,
+            padding=ft.Padding(8, 0, 0, 0),
+            content=ft.Column(
+                spacing=8,
+                tight=True,
+                controls=right_controls,
+            ),
+        )
+
+        self.controls = [
+            ft.Row(
+                spacing=0,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+                controls=[calendar_col, right_col],
             ),
         ]
 
@@ -224,7 +247,7 @@ class CustomDatePicker(ft.Column):
         return ft.Dropdown(
             value=f"{value:02d}",
             options=[ft.dropdown.Option(key=f"{h:02d}", text=f"{h:02d}") for h in range(24)],
-            width=110,
+            width=90,
             text_size=13,
             content_padding=ft.Padding(8, 6, 8, 6),
             border_radius=6,
@@ -237,7 +260,7 @@ class CustomDatePicker(ft.Column):
         return ft.Dropdown(
             value=f"{value:02d}",
             options=[ft.dropdown.Option(key=f"{m:02d}", text=f"{m:02d}") for m in range(0, 60, 5)],
-            width=110,
+            width=90,
             text_size=13,
             content_padding=ft.Padding(8, 6, 8, 6),
             border_radius=6,
@@ -299,7 +322,7 @@ class CustomDatePicker(ft.Column):
             self._start_hh = self._build_hour_dd(self._start_hour, self._on_start_time)
             self._start_mm = self._build_minute_dd(self._start_minute, self._on_start_time)
             self._time_input = ft.TextField(
-                hint_text="HH:MM", width=110, text_size=13,
+                hint_text="HH:MM", width=90, text_size=13,
                 content_padding=ft.Padding(8, 6, 8, 6), border_radius=6,
                 on_submit=self._on_time_text_submit,
             )

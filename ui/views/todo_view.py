@@ -192,8 +192,6 @@ class TodoApp(ft.Column):
         for i, chip in enumerate(self._new_freq_chips.controls):
             chip.label = ft.Text(new_labels[i], size=11)
         self._new_repeat_row.controls[0] = ft.Text(t("task.repeat"), size=12, color=AppColors.TEXT_HINT)
-        self._new_mode_once.label = ft.Text(t("repeat.once_mode"), size=11)
-        self._new_mode_each.label = ft.Text(t("repeat.each_mode"), size=11)
         # 更新快捷气泡
         chip_keys = ["chat.chip_7day_plan", "chat.chip_what_next", "chat.chip_all_tasks", "chat.chip_clear_done"]
         for i, chip in enumerate(self._quick_chips.controls):
@@ -336,8 +334,8 @@ class TodoApp(ft.Column):
             border_radius=ft.BorderRadius(12, 4, 4, 12),
             shadow=ft.BoxShadow(
                 spread_radius=0,
-                blur_radius=8,
-                color=ft.Colors.with_opacity(0.1, ft.Colors.BLACK),
+                blur_radius=16,
+                color=ft.Colors.with_opacity(0.06, ft.Colors.BLACK),
                 offset=ft.Offset(2, 0),
             ),
             animate_opacity=300,
@@ -388,57 +386,7 @@ class TodoApp(ft.Column):
             content_padding=ft.Padding(16, 12, 16, 12),
         )
 
-        # ── 新任务日期选择器（自定义，自动范围） ──
-        from ui.components.date_picker import CustomDatePicker
-        self._new_task_date_label = ft.Text(
-            "",
-            size=11,
-            color=AppColors.TEXT_HINT,
-            visible=False,
-        )
-        self._new_task_picker = CustomDatePicker(
-            selected=date.today(),
-            on_change=self._on_new_task_date_picked,
-            show_time=True,
-        )
-        self._new_task_picker_panel = ft.Container(
-            visible=False,
-            padding=ft.Padding(0, 4, 0, 4),
-            animate_opacity=250,
-            animate_size=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            content=ft.Column(
-                spacing=0,
-                tight=True,
-                controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.END,
-                        controls=[
-                            ft.IconButton(
-                                icon=ft.Icons.CLOSE_ROUNDED,
-                                icon_size=16,
-                                tooltip=t("task.close"),
-                                on_click=self._close_picker,
-                            ),
-                        ],
-                    ),
-                    self._new_task_picker,
-                ],
-            ),
-        )
-
-        self._new_task_desc = ft.TextField(
-            hint_text=t("task.desc_hint"),
-            text_size=13,
-            content_padding=ft.Padding(8, 6, 8, 6),
-            border_radius=8,
-            multiline=True,
-            min_lines=1,
-            max_lines=3,
-            visible=False,
-        )
-
-        # ── 新任务重复设置：频率 Chips ──
+        # ── 新任务重复设置：频率 Chips（先建，再传给 picker） ──
         self._new_repeat_presets = [
             (0, t("repeat.not_repeat")),
             (1, t("repeat.every_day")),
@@ -476,45 +424,64 @@ class TodoApp(ft.Column):
                 ft.Text(t("task.repeat_days_unit"), size=11),
             ],
         )
-        # 模式选项
-        self._new_mode_once = ft.Chip(
-            label=ft.Text(t("repeat.once_mode"), size=11),
-            data="once",
-            selected=True,
-            on_select=lambda e: self._on_new_mode_select("once"),
-        )
-        self._new_mode_each = ft.Chip(
-            label=ft.Text(t("repeat.each_mode"), size=11),
-            data="each",
-            selected=False,
-            on_select=lambda e: self._on_new_mode_select("each"),
-        )
-        self._new_mode_desc = ft.Text(
-            t("repeat.once_desc"), size=10, color=AppColors.TEXT_HINT,
-        )
-        self._new_mode_row = ft.Column(
-            spacing=2, visible=False, tight=True,
-            controls=[
-                ft.Row(
-                    spacing=4,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.Text(t("task.repeat_mode_label"), size=11, color=AppColors.TEXT_HINT),
-                        self._new_mode_once,
-                        self._new_mode_each,
-                    ],
-                ),
-                self._new_mode_desc,
-            ],
-        )
         self._new_repeat_row = ft.Column(
             spacing=4, visible=False, tight=True,
             controls=[
                 ft.Text(t("task.repeat"), size=12, color=AppColors.TEXT_HINT),
                 self._new_freq_chips,
                 self._new_custom_row,
-                self._new_mode_row,
             ],
+        )
+
+        # ── 新任务日期选择器（重复选项传入右列） ──
+        from ui.components.date_picker import CustomDatePicker
+        self._new_task_date_label = ft.Text(
+            "",
+            size=11,
+            color=AppColors.TEXT_HINT,
+            visible=False,
+        )
+        self._new_task_picker = CustomDatePicker(
+            selected=date.today(),
+            on_change=self._on_new_task_date_picked,
+            show_time=True,
+            extra_controls=[self._new_repeat_row],
+        )
+        self._new_task_picker_panel = ft.Container(
+            visible=False,
+            padding=ft.Padding(0, 4, 0, 4),
+            animate_opacity=250,
+            animate_size=ft.Animation(250, ft.AnimationCurve.EASE_OUT),
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            content=ft.Column(
+                spacing=0,
+                tight=True,
+                controls=[
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.END,
+                        controls=[
+                            ft.IconButton(
+                                icon=ft.Icons.CLOSE_ROUNDED,
+                                icon_size=16,
+                                tooltip=t("task.close"),
+                                on_click=self._close_picker,
+                            ),
+                        ],
+                    ),
+                    self._new_task_picker,
+                ],
+            ),
+        )
+
+        self._new_task_desc = ft.TextField(
+            hint_text=t("task.desc_hint"),
+            text_size=13,
+            content_padding=ft.Padding(8, 6, 8, 6),
+            border_radius=8,
+            multiline=True,
+            min_lines=1,
+            max_lines=3,
+            visible=False,
         )
 
         # ── 筛选按钮 ──
@@ -604,8 +571,6 @@ class TodoApp(ft.Column):
                     self._new_task_picker_panel,
                     # 描述输入
                     self._new_task_desc,
-                    # 重复设置
-                    self._new_repeat_row,
                     # 筛选行
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -964,15 +929,6 @@ class TodoApp(ft.Column):
             self._new_custom_days.value = ""
         for chip in self._new_freq_chips.controls:
             chip.selected = (chip.data == days)
-        self._new_mode_row.visible = self._get_new_repeat_days() > 0
-        self.update()
-
-    def _on_new_mode_select(self, mode: str):
-        self._new_mode_once.selected = (mode == "once")
-        self._new_mode_each.selected = (mode == "each")
-        self._new_mode_desc.value = (
-            t("repeat.once_desc") if mode == "once" else t("repeat.each_desc")
-        )
         self.update()
 
     def _get_new_repeat_days(self) -> int:
@@ -987,9 +943,7 @@ class TodoApp(ft.Column):
         return 0
 
     def _get_new_repeat_mode(self) -> str:
-        if self._new_mode_each.selected:
-            return "each"
-        return "once"
+        return "each"
 
     async def add_clicked(self, e):
         if self.new_task.value:
@@ -1033,9 +987,6 @@ class TodoApp(ft.Column):
                 chip.selected = (chip.data == 0)
             self._new_custom_days.value = ""
             self._new_custom_row.visible = False
-            self._new_mode_once.selected = True
-            self._new_mode_each.selected = False
-            self._new_mode_row.visible = False
             self._new_repeat_row.visible = False
             self._new_task_date_label.visible = False
             self._new_task_picker_panel.visible = False
@@ -1083,7 +1034,6 @@ class TodoApp(ft.Column):
                 chip.selected = (chip.data == 0)
             self._new_custom_days.value = ""
             self._new_custom_row.visible = False
-            self._new_mode_row.visible = False
         self.update()
 
     def _update_new_task_date_label(self):

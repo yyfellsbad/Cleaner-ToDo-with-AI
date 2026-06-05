@@ -221,6 +221,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "toast.task_deleted": {"zh": "已删除任务：{}", "en": "Task deleted: {}"},
     "toast.tasks_cleared": {"zh": "已清除 {} 个已完成任务", "en": "Cleared {} completed tasks"},
 
+    # ── Empty state ─────────────────────────────────────────
+    "empty.no_tasks": {"zh": "暂无待办任务", "en": "No tasks yet"},
+    "empty.add_hint": {"zh": "在上方输入框添加新任务", "en": "Add a new task using the input above"},
+
     # ── Repeat / recurring tasks ────────────────────────────
     "repeat.not_repeat": {"zh": "不重复", "en": "No repeat"},
     "repeat.every_day": {"zh": "每天", "en": "Daily"},

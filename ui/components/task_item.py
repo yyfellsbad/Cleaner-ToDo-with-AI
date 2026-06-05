@@ -30,6 +30,8 @@ class Task(ft.Column):
         completed_dates=None,
     ):
         super().__init__()
+        self.border_radius = 12
+        self.clip_behavior = ft.ClipBehavior.ANTI_ALIAS
         self.app = app
         self.task_id = task_id
         self.task_name = task_name
@@ -204,13 +206,45 @@ class Task(ft.Column):
             ),
         )
 
+        # 进度条：持续任务显示时间进度
+        self._progress_bar = None
+        if self.end_date and not self.completed:
+            now = datetime.now()
+            total_seconds = (self.end_date - self.date).total_seconds()
+            if total_seconds > 0:
+                elapsed_seconds = (now - self.date).total_seconds()
+                progress = max(0.0, min(1.0, elapsed_seconds / total_seconds))
+                if progress >= 0.9:
+                    progress_color = ft.Colors.ERROR
+                elif progress >= 0.75:
+                    progress_color = ft.Colors.DEEP_ORANGE
+                elif progress >= 0.6:
+                    progress_color = ft.Colors.ORANGE
+                elif progress >= 0.45:
+                    progress_color = ft.Colors.AMBER
+                elif progress >= 0.3:
+                    progress_color = ft.Colors.TEAL
+                else:
+                    progress_color = ft.Colors.PRIMARY
+                self._progress_bar = ft.ProgressBar(
+                    value=progress,
+                    height=3,
+                    border_radius=2,
+                    color=progress_color,
+                    bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
+                )
+
+        date_controls = [self._date_display_text, self._date_editor_row]
+        if self._progress_bar:
+            date_controls.append(ft.Container(
+                padding=ft.Padding(0, 4, 0, 0),
+                content=self._progress_bar,
+            ))
+
         date_area = ft.Column(
             spacing=0,
             tight=True,
-            controls=[
-                self._date_display_text,
-                self._date_editor_row,
-            ],
+            controls=date_controls,
         )
 
         # ── 描述显示 ──
@@ -238,18 +272,18 @@ class Task(ft.Column):
             card_bg = ft.Colors.with_opacity(0.92, AppColors.PANEL_BG)
             card_opacity = 1.0
             status_tag = ft.Container(
-                padding=ft.Padding(6, 2, 6, 2),
-                border_radius=4,
-                bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY),
+                padding=ft.Padding(8, 2, 8, 2),
+                border_radius=10,
+                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.PRIMARY),
                 content=ft.Text(t("task.completed_tag"), size=10, color=ft.Colors.PRIMARY, weight=ft.FontWeight.W_500),
             )
         elif self.expired:
             card_bg = AppColors.PANEL_BG
             card_opacity = 0.5
             status_tag = ft.Container(
-                padding=ft.Padding(6, 2, 6, 2),
-                border_radius=4,
-                bgcolor=ft.Colors.with_opacity(0.15, ft.Colors.ERROR),
+                padding=ft.Padding(8, 2, 8, 2),
+                border_radius=10,
+                bgcolor=ft.Colors.with_opacity(0.12, ft.Colors.ERROR),
                 content=ft.Text(t("task.expired_tag"), size=10, color=ft.Colors.ERROR, weight=ft.FontWeight.W_500),
             )
         else:
@@ -262,9 +296,9 @@ class Task(ft.Column):
         self.display_view = ft.GestureDetector(
             mouse_cursor=ft.MouseCursor.CLICK,
             content=ft.Container(
-                border_radius=10,
-                padding=ft.Padding(28, 8, 40, 8),
-                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                border_radius=12,
+                padding=ft.Padding(20, 12, 20, 12),
+                border=ft.Border.all(1, ft.Colors.with_opacity(0.5, ft.Colors.OUTLINE_VARIANT)),
                 bgcolor=card_bg,
                 opacity=card_opacity,
                 animate_opacity=250,
@@ -368,45 +402,12 @@ class Task(ft.Column):
                 ft.Text(t("task.repeat_days_unit"), size=11),
             ],
         )
-        # 模式选项
-        self._edit_mode_once = ft.Chip(
-            label=ft.Text(t("repeat.once_mode"), size=11),
-            data="once",
-            selected=False,
-            on_select=lambda e: self._on_mode_select("once"),
-        )
-        self._edit_mode_each = ft.Chip(
-            label=ft.Text(t("repeat.each_mode"), size=11),
-            data="each",
-            selected=False,
-            on_select=lambda e: self._on_mode_select("each"),
-        )
-        self._edit_mode_desc = ft.Text(
-            "", size=10, color=AppColors.TEXT_HINT,
-        )
-        self._edit_mode_row = ft.Column(
-            spacing=2, visible=False,
-            tight=True,
-            controls=[
-                ft.Row(
-                    spacing=4,
-                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[
-                        ft.Text(t("task.repeat_mode_label"), size=11, color=AppColors.TEXT_HINT),
-                        self._edit_mode_once,
-                        self._edit_mode_each,
-                    ],
-                ),
-                self._edit_mode_desc,
-            ],
-        )
         self._repeat_edit_column = ft.Column(
             spacing=4, tight=True,
             controls=[
                 ft.Text(t("task.repeat"), size=12, color=AppColors.TEXT_HINT),
                 self._edit_freq_chips,
                 self._edit_custom_row,
-                self._edit_mode_row,
             ],
         )
 
@@ -457,8 +458,6 @@ class Task(ft.Column):
         if is_custom:
             self._edit_custom_row.visible = True
             self._edit_custom_days.value = str(self.repeat_days)
-        # 初始化模式
-        self._sync_mode_ui()
         self.display_view.visible = False
         self.edit_view.visible = True
         self.update()
@@ -473,30 +472,10 @@ class Task(ft.Column):
             self._edit_custom_days.value = ""
         for chip in self._edit_freq_chips.controls:
             chip.selected = (chip.data == days) if days != -1 else (chip.data == -1)
-        self._sync_mode_ui()
         self.update()
 
     def _on_custom_days_change(self, e):
-        self._sync_mode_ui()
-
-    def _on_mode_select(self, mode: str):
-        self._edit_mode_once.selected = (mode == "once")
-        self._edit_mode_each.selected = (mode == "each")
-        self._edit_mode_desc.value = (
-            t("repeat.once_desc") if mode == "once" else t("repeat.each_desc")
-        )
-        self.update()
-
-    def _sync_mode_ui(self):
-        days = self._get_edit_repeat_days()
-        self._edit_mode_row.visible = (days > 0)
-        if days > 0:
-            # 默认选中当前模式
-            self._edit_mode_once.selected = (self.repeat_mode == "once")
-            self._edit_mode_each.selected = (self.repeat_mode == "each")
-            self._edit_mode_desc.value = (
-                t("repeat.once_desc") if self.repeat_mode == "once" else t("repeat.each_desc")
-            )
+        pass
 
     def _get_edit_repeat_days(self) -> int:
         for chip in self._edit_freq_chips.controls:
@@ -509,16 +488,11 @@ class Task(ft.Column):
                     return 0
         return 0
 
-    def _get_edit_repeat_mode(self) -> str:
-        if self._edit_mode_each.selected:
-            return "each"
-        return "once"
-
     def save_clicked(self, e):
         self.task_name = self.edit_name.value
         self.description = self.edit_desc.value or ""
         self.repeat_days = self._get_edit_repeat_days()
-        self.repeat_mode = self._get_edit_repeat_mode()
+        self.repeat_mode = "each"
         self._desc_text.value = self.description
         self._desc_text.visible = bool(self.description)
         self._desc_display.mouse_cursor = (
@@ -635,9 +609,9 @@ class Task(ft.Column):
         if e.data == "true":
             card.shadow = ft.BoxShadow(
                 spread_radius=0,
-                blur_radius=8,
-                color=ft.Colors.with_opacity(0.15, ft.Colors.BLACK),
-                offset=ft.Offset(0, 2),
+                blur_radius=20,
+                color=ft.Colors.with_opacity(0.06, ft.Colors.BLACK),
+                offset=ft.Offset(0, 4),
             )
         else:
             card.shadow = ft.BoxShadow(

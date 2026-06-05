@@ -438,8 +438,10 @@ class StatsView(ft.Column):
                     height=HEAT_CELL,
                     border_radius=3,
                     bgcolor=bg,
-                    data=ds,
+                    border=ft.Border.all(1, ft.Colors.with_opacity(0, ft.Colors.OUTLINE)),
+                    data={"date": ds, "bg": bg},
                     on_click=self._on_heatmap_click if clickable else None,
+                    on_hover=self._on_heatmap_hover,
                     tooltip=tooltip,
                 )
                 self._heatmap_cells[ds] = cell
@@ -563,6 +565,15 @@ class StatsView(ft.Column):
         self._build_heatmap(datetime.now().date())
         self.update()
 
+    def _on_heatmap_hover(self, e):
+        """热力图单元格hover效果：悬停时边框高亮。"""
+        cell = e.control
+        if e.data == "true":
+            cell.border = ft.Border.all(1.5, ft.Colors.PRIMARY)
+        else:
+            cell.border = ft.Border.all(1, ft.Colors.with_opacity(0, ft.Colors.OUTLINE))
+        cell.update()
+
     def _on_today_assess(self, e):
         score_val = e.control.data
         today_str = datetime.now().date().isoformat()
@@ -574,7 +585,7 @@ class StatsView(ft.Column):
 
     def _on_heatmap_click(self, e):
         """点击历史日期方块，弹出判定对话框。"""
-        date_str = e.control.data
+        date_str = e.control.data["date"] if isinstance(e.control.data, dict) else e.control.data
         if not date_str or not self._assessment_repo:
             return
         current = self._assessment_repo.get(date_str)
