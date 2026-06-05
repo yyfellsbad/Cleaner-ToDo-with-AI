@@ -63,7 +63,15 @@ def main(page: ft.Page):
 
     page.window.on_event = _on_window_event
 
-    page.add(TodoApp(tm, repo, llm_cfg, assessment_repo))
+    todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo)
+    page.add(todo_app)
+
+    # 注册键盘快捷键
+    def _on_page_keyboard(e: ft.KeyboardEvent):
+        if hasattr(todo_app, '_keyboard_handler'):
+            todo_app._keyboard_handler(e)
+
+    page.on_keyboard_event = _on_page_keyboard
 
 
 if __name__ == "__main__":

@@ -817,3 +817,67 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 - 无历史记录时使用默认值（1100×800，居中）
 
 **效果：** 关闭后重新打开，窗口自动恢复到上次的位置和大小。
+
+---
+
+## 27. 人机交互动画与交互优化
+
+**问题：** 任务操作缺乏视觉反馈，用户感知不到操作结果；聊天体验缺少动态感；侧边栏选中状态不明显；缺少快捷键支持。
+
+**实现方案：**
+
+### A1. 任务卡片添加/删除动画
+**文件：** `ui/components/task_item.py`, `ui/views/todo_view.py`
+- `Task` 类新增 `animate_entrance()` 方法：新任务淡入+缩放（opacity 0→1, scale 0.95→1.0, 250ms）
+- `Task` 类新增 `animate_exit()` 方法：删除任务淡出+缩小（opacity 1→0, scale 1.0→0.9, 250ms）
+- `add_clicked()` 添加任务后调用 `animate_entrance()`
+- `task_delete()` 确认删除前调用 `animate_exit()`
+
+### A5. 聊天气泡入场动画
+**文件：** `ui/views/todo_view.py`
+- `_append_bubble()` 方法添加 `animate_opacity=300` + `animate_scale=300`
+- 气泡初始状态 opacity=0, scale=0.9，添加后 50ms 延迟后恢复为 opacity=1, scale=1.0
+
+### A6. 任务完成勾选动画
+**文件：** `ui/components/task_item.py`
+- `status_changed()` 改为 async 方法
+- 完成时卡片背景短暂变为 PRIMARY 高亮色（300ms），然后恢复为完成态样式
+
+### B3. 任务卡片hover阴影
+**文件：** `ui/components/task_item.py`
+- `display_view` 容器添加 `on_hover` 回调
+- 鼠标悬停时 `blur_radius=8, opacity=0.15, offset=2` 的阴影
+- 鼠标离开时阴影恢复为 0
+
+### A2. 侧边栏选中指示
+**文件：** `ui/views/todo_view.py`
+- 侧边栏图标按钮包装在 `ft.Container` 中（40×40, border_radius=8）
+- 选中项添加 `bgcolor=with_opacity(0.15, PRIMARY)` 背景高亮
+- 图标颜色同步变为 PRIMARY
+
+### B2. Toast通知系统
+**文件：** `ui/views/todo_view.py`, `ui/i18n.py`
+- `_show_toast()` 方法：右下角弹出通知，300ms 淡入，2秒后 300ms 淡出
+- 添加任务、删除任务、清除已完成任务后自动触发
+- 新增 i18n 键：`toast.task_added`, `toast.task_deleted`, `toast.tasks_cleared`
+
+### B1. 键盘快捷键
+**文件：** `app.py`, `ui/views/todo_view.py`
+- `app.py` 注册 `page.on_keyboard_event` 回调
+- `todo_view.py` 新增 `_setup_keyboard_shortcuts()` 和 `_on_keyboard_event()` 方法
+- 支持：Ctrl+Z（撤销）、Ctrl+N（聚焦新任务输入框）、Esc（关闭活动面板/抽屉）
+
+**效果：** 任务操作有明确的动画反馈和 Toast 提示；聊天体验更流畅；侧边栏选中状态一目了然；键盘用户可快速操作。
+
+---
+
+## 修改文件清单（2026-06-05 人机交互优化）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/task_item.py` | 添加入场/退出动画、hover阴影、完成高亮动画 |
+| `ui/views/todo_view.py` | Toast通知、侧边栏选中指示、键盘快捷键、聊天气泡动画 |
+| `ui/i18n.py` | 新增 3 个 toast 通知键 |
+| `app.py` | 注册键盘快捷键处理器 |
+| `CLAUDE.md` | 更新 UI conventions |
+| `人机交互技术体现.md` | **新增** — 人机交互技术分析文档 |

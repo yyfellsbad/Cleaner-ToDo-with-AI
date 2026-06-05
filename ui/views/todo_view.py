@@ -58,6 +58,39 @@ class TodoApp(ft.Column):
             task.key = str(record.id) if record.id else str(id(task))
             self.tasks.controls.append(task)
 
+    def _show_toast(self, message: str, duration: int = 2000):
+        """显示右下角 Toast 通知。"""
+        toast = ft.Container(
+            content=ft.Container(
+                padding=ft.Padding(16, 10, 16, 10),
+                border_radius=8,
+                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                content=ft.Text(
+                    message,
+                    color=ft.Colors.ON_SURFACE,
+                    size=13,
+                ),
+            ),
+            alignment=ft.Alignment(1.0, 1.0),  # 右下角
+            padding=ft.Padding(0, 0, 20, 20),
+            animate_opacity=300,
+            opacity=1,
+        )
+        self.page.overlay.append(toast)
+        self.page.update()
+
+        async def _fade_out():
+            await asyncio.sleep(duration / 1000)
+            toast.opacity = 0
+            self.page.update()
+            await asyncio.sleep(0.3)
+            if toast in self.page.overlay:
+                self.page.overlay.remove(toast)
+                self.page.update()
+
+        asyncio.ensure_future(_fade_out())
+
     def save_task(self, task):
         if task.task_id is not None:
             self.push_undo_snapshot()
@@ -143,10 +176,10 @@ class TodoApp(ft.Column):
         self._clear_btn.content = ft.Text(t("btn.clear_completed"))
         self._undo_btn.content = ft.Text(t("btn.undo"))
         # 更新侧边栏 tooltips
-        self._sidebar_chat.tooltip = t("sidebar.chat")
-        self._sidebar_stats.tooltip = t("sidebar.stats")
-        self._sidebar_calendar.tooltip = t("sidebar.calendar")
-        self._sidebar_settings.tooltip = t("sidebar.settings")
+        self._sidebar_chat.content.tooltip = t("sidebar.chat")
+        self._sidebar_stats.content.tooltip = t("sidebar.stats")
+        self._sidebar_calendar.content.tooltip = t("sidebar.calendar")
+        self._sidebar_settings.content.tooltip = t("sidebar.settings")
         # 更新输入框 hint
         self.command_input.hint_text = t("chat.input_hint")
         self.new_task.hint_text = t("task.add_hint")
@@ -178,9 +211,13 @@ class TodoApp(ft.Column):
         self.stats_view.visible = active == "stats"
         self.calendar_view.visible = active == "calendar"
         self.settings_view.visible = active == "settings"
-        self._sidebar_stats.icon_color = ft.Colors.PRIMARY if self.show_stats else None
-        self._sidebar_calendar.icon_color = ft.Colors.PRIMARY if self.show_calendar else None
-        self._sidebar_settings.icon_color = ft.Colors.PRIMARY if self.show_settings else None
+        # 更新侧边栏选中状态
+        self._sidebar_stats.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY) if self.show_stats else None
+        self._sidebar_calendar.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY) if self.show_calendar else None
+        self._sidebar_settings.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY) if self.show_settings else None
+        self._sidebar_stats.content.icon_color = ft.Colors.PRIMARY if self.show_stats else None
+        self._sidebar_calendar.content.icon_color = ft.Colors.PRIMARY if self.show_calendar else None
+        self._sidebar_settings.content.icon_color = ft.Colors.PRIMARY if self.show_settings else None
 
     def open_settings(self, e):
         self._sync_content_views("settings" if not self.show_settings else "main")
@@ -196,14 +233,16 @@ class TodoApp(ft.Column):
             await asyncio.sleep(0.3)
             self._drawer.visible = False
             self._drawer_open = False
-            self._sidebar_chat.icon_color = None
+            self._sidebar_chat.bgcolor = None
+            self._sidebar_chat.content.icon_color = None
             self._content_column.opacity = 1
         else:
             self._content_column.opacity = 0.5
             self._drawer.visible = True
             self._drawer.opacity = 0
             self._drawer_open = True
-            self._sidebar_chat.icon_color = ft.Colors.PRIMARY
+            self._sidebar_chat.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY)
+            self._sidebar_chat.content.icon_color = ft.Colors.PRIMARY
             self.update()
             await asyncio.sleep(0.05)
             self._drawer.opacity = 1
@@ -597,29 +636,49 @@ class TodoApp(ft.Column):
         )
 
         # ── 左侧边栏（VSCode 风格）──
-        self._sidebar_chat = ft.IconButton(
-            icon=ft.Icons.CHAT_BUBBLE_OUTLINE_ROUNDED,
-            icon_size=22,
-            tooltip=t("sidebar.chat"),
-            on_click=self._toggle_chat_drawer,
+        self._sidebar_chat = ft.Container(
+            width=40,
+            height=40,
+            border_radius=8,
+            content=ft.IconButton(
+                icon=ft.Icons.CHAT_BUBBLE_OUTLINE_ROUNDED,
+                icon_size=22,
+                tooltip=t("sidebar.chat"),
+                on_click=self._toggle_chat_drawer,
+            ),
         )
-        self._sidebar_stats = ft.IconButton(
-            icon=ft.Icons.BAR_CHART_OUTLINED,
-            icon_size=22,
-            tooltip=t("sidebar.stats"),
-            on_click=self.open_stats,
+        self._sidebar_stats = ft.Container(
+            width=40,
+            height=40,
+            border_radius=8,
+            content=ft.IconButton(
+                icon=ft.Icons.BAR_CHART_OUTLINED,
+                icon_size=22,
+                tooltip=t("sidebar.stats"),
+                on_click=self.open_stats,
+            ),
         )
-        self._sidebar_calendar = ft.IconButton(
-            icon=ft.Icons.CALENDAR_MONTH_OUTLINED,
-            icon_size=22,
-            tooltip=t("sidebar.calendar"),
-            on_click=self.open_calendar,
+        self._sidebar_calendar = ft.Container(
+            width=40,
+            height=40,
+            border_radius=8,
+            content=ft.IconButton(
+                icon=ft.Icons.CALENDAR_MONTH_OUTLINED,
+                icon_size=22,
+                tooltip=t("sidebar.calendar"),
+                on_click=self.open_calendar,
+            ),
         )
-        self._sidebar_settings = ft.IconButton(
-            icon=ft.Icons.SETTINGS_OUTLINED,
-            icon_size=22,
-            tooltip=t("sidebar.settings"),
-            on_click=self.open_settings,
+        self._sidebar_settings = ft.Container(
+            width=40,
+            height=40,
+            border_radius=8,
+            content=ft.IconButton(
+                icon=ft.Icons.SETTINGS_OUTLINED,
+                icon_size=22,
+                tooltip=t("sidebar.settings"),
+                on_click=self.open_settings,
+            ),
         )
         sidebar = ft.Container(
             width=48,
@@ -712,6 +771,10 @@ class TodoApp(ft.Column):
         self.spacing = 0
         self._drawer_open = False
         self._chat_greeted = False
+
+        # 键盘快捷键
+        self._setup_keyboard_shortcuts()
+
         self._content_column = ft.Column(
             expand=True,
             spacing=12,
@@ -741,6 +804,32 @@ class TodoApp(ft.Column):
 
     def did_mount(self):
         self._show_welcome_dialog()
+
+    def _setup_keyboard_shortcuts(self):
+        """设置键盘快捷键。"""
+        self._keyboard_handler = self._on_keyboard_event
+
+    def _on_keyboard_event(self, e: ft.KeyboardEvent):
+        """处理键盘快捷键。"""
+        # Ctrl+Z: 撤销
+        if e.ctrl and e.key == "z" and not e.shift:
+            self.undo_last(None)
+            return
+        # Ctrl+N: 聚焦到新任务输入框
+        if e.ctrl and e.key == "n":
+            self.new_task.focus()
+            return
+        # Esc: 关闭聊天抽屉或其他面板
+        if e.key == "Escape":
+            if self._drawer_open:
+                import asyncio
+                asyncio.ensure_future(self._toggle_chat_drawer(None))
+            elif self.show_settings:
+                self.open_settings(None)
+            elif self.show_stats:
+                self.open_stats(None)
+            elif self.show_calendar:
+                self.open_calendar(None)
 
     def _get_greeting(self) -> str:
         now = datetime.now()
@@ -933,6 +1022,10 @@ class TodoApp(ft.Column):
             task.key = str(task_record.id)
             self.tasks.controls.append(task)
             self.new_task.value = ""
+            self.update()
+            await asyncio.sleep(0.05)  # 等待 Flet 渲染新控件
+            await task.animate_entrance()
+            self._show_toast(t("toast.task_added", task_record.name))
             self._new_task_desc.value = ""
             self._new_task_desc.visible = False
             # 重置重复设置
@@ -1036,12 +1129,14 @@ class TodoApp(ft.Column):
         return label
 
     def task_delete(self, task):
-        def _confirm(e):
+        async def _confirm(e):
             self.page.pop_dialog()
             self.push_undo_snapshot()
+            await task.animate_exit()
             self.tasks.controls.remove(task)
             self.delete_task(task)
             self.update()
+            self._show_toast(t("toast.task_deleted", task.task_name))
 
         def _cancel(e):
             self.page.pop_dialog()
@@ -1070,11 +1165,15 @@ class TodoApp(ft.Column):
 
     def clear_clicked(self, e):
         self.push_undo_snapshot()
+        count = 0
         for task in self.tasks.controls[:]:
             if task.completed:
                 self.tasks.controls.remove(task)
                 self.delete_task(task)
+                count += 1
         self.update()
+        if count > 0:
+            self._show_toast(t("toast.tasks_cleared", count))
 
     # ── 生命周期 & 状态同步 ──────────────────────────────
 
@@ -1282,6 +1381,10 @@ class TodoApp(ft.Column):
         bubble = ft.Container(
             alignment=ft.Alignment(1.0 if is_user else -1.0, 0),
             padding=ft.Padding(40 if is_user else 8, 0, 8 if is_user else 40, 0),
+            animate_opacity=300,
+            animate_scale=300,
+            opacity=0,
+            scale=ft.Scale(0.9),
             content=ft.Container(
                 padding=ft.Padding(14, 10, 14, 10),
                 border_radius=ft.BorderRadius(16, 16, 16, 4)
@@ -1303,6 +1406,11 @@ class TodoApp(ft.Column):
             ),
         )
         self.chat_history.controls.append(bubble)
+        self.update()
+        await asyncio.sleep(0.05)
+        bubble.opacity = 1
+        bubble.scale = ft.Scale(1.0)
+        self.update()
 
     # ── 筛选 & 撤销 ──────────────────────────────────────
 

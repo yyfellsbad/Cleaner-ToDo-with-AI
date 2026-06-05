@@ -216,6 +216,11 @@ MESSAGES: dict[str, dict[str, str]] = {
     "calendar.no_tasks": {"zh": "当日无待办", "en": "No tasks this day"},
     "calendar.task_count": {"zh": "{} 个待办", "en": "{} tasks"},
 
+    # ── Toast notifications ─────────────────────────────────
+    "toast.task_added": {"zh": "已添加任务：{}", "en": "Task added: {}"},
+    "toast.task_deleted": {"zh": "已删除任务：{}", "en": "Task deleted: {}"},
+    "toast.tasks_cleared": {"zh": "已清除 {} 个已完成任务", "en": "Cleared {} completed tasks"},
+
     # ── Repeat / recurring tasks ────────────────────────────
     "repeat.not_repeat": {"zh": "不重复", "en": "No repeat"},
     "repeat.every_day": {"zh": "每天", "en": "Daily"},

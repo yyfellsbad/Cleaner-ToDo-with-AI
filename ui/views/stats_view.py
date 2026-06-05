@@ -392,27 +392,21 @@ class StatsView(ft.Column):
         # 构建网格列（按周分组）
         self._heatmap_cells.clear()
         columns: list[ft.Control] = []
-        month_labels: list[ft.Control] = []
-        prev_month = -1
+        # 记录每个月占据的列范围 {month: (first_col_idx, last_col_idx)}
+        month_col_ranges: dict[int, tuple[int, int]] = {}
+        col_idx = 0
         week_start = first_monday
 
         while week_start <= dec31:
-            # 月份标签：该周第一天跨月时显示
-            display_month = week_start if week_start >= jan1 else jan1
-            if display_month.month != prev_month:
-                month_labels.append(
-                    ft.Container(
-                        width=HEAT_CELL,
-                        content=ft.Text(
-                            t("stats.heatmap_month", display_month.month),
-                            size=9,
-                            color=ft.Colors.ON_SURFACE_VARIANT,
-                        ),
-                    )
-                )
-                prev_month = display_month.month
-            else:
-                month_labels.append(ft.Container(width=HEAT_CELL))
+            # 统计该周各月天数
+            for wd in range(7):
+                cell_date = week_start + timedelta(days=wd)
+                if jan1 <= cell_date <= dec31:
+                    m = cell_date.month
+                    if m not in month_col_ranges:
+                        month_col_ranges[m] = (col_idx, col_idx)
+                    else:
+                        month_col_ranges[m] = (month_col_ranges[m][0], col_idx)
 
             # 该周的 7 天
             day_cells = []
@@ -453,11 +447,23 @@ class StatsView(ft.Column):
 
             col = ft.Column(spacing=HEAT_GAP, controls=day_cells)
             columns.append(col)
+            col_idx += 1
             week_start += timedelta(days=7)
 
-        # 月份标签对齐（补齐到与 columns 等长）
-        while len(month_labels) < len(columns):
-            month_labels.append(ft.Container(width=HEAT_CELL))
+        # 月份标签：基于每月占据的列范围，居中放置
+        total_cols = len(columns)
+        month_labels: list[ft.Control] = [ft.Container(width=HEAT_CELL)] * total_cols
+        for m, (first_col, last_col) in month_col_ranges.items():
+            center_col = (first_col + last_col) // 2
+            if 0 <= center_col < total_cols:
+                month_labels[center_col] = ft.Container(
+                    width=HEAT_CELL,
+                    content=ft.Text(
+                        t("stats.heatmap_month", m),
+                        size=9,
+                        color=ft.Colors.ON_SURFACE_VARIANT,
+                    ),
+                )
 
         month_row = ft.Row(spacing=HEAT_GAP, controls=month_labels)
 

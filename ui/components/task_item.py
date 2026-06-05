@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, timedelta
 
 import flet as ft
@@ -40,6 +41,7 @@ class Task(ft.Column):
         self.repeat_days = repeat_days
         self.repeat_mode = repeat_mode
         self.completed_dates = completed_dates or []
+        self._is_new = False  # 标记是否为新添加的任务
 
     @property
     def expired(self) -> bool:
@@ -265,6 +267,16 @@ class Task(ft.Column):
                 border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
                 bgcolor=card_bg,
                 opacity=card_opacity,
+                animate_opacity=250,
+                animate_scale=250,
+                scale=ft.Scale(1.0),
+                shadow=ft.BoxShadow(
+                    spread_radius=0,
+                    blur_radius=0,
+                    color=ft.Colors.with_opacity(0, ft.Colors.BLACK),
+                    offset=ft.Offset(0, 0),
+                ),
+                on_hover=self._on_card_hover,
                 content=ft.Row(
                     expand=True,
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -521,8 +533,14 @@ class Task(ft.Column):
 
     # ── 状态变更 ──
 
-    def status_changed(self, e):
+    async def status_changed(self, e):
         self.completed = e.control.value
+        card = self.display_view.content
+        # 完成时短暂高亮后变暗
+        if self.completed:
+            card.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY)
+            self.update()
+            await asyncio.sleep(0.3)
         self._refresh_card_style()
         self.app.save_task(self)
 
@@ -591,3 +609,41 @@ class Task(ft.Column):
             card.bgcolor = AppColors.PANEL_BG
             card.opacity = 1.0
         # 标记由 build() 静态生成，状态变更后通过 load_tasks 重建
+
+    async def animate_entrance(self):
+        """新任务入场动画：从下方滑入并淡入。"""
+        card = self.display_view.content
+        card.opacity = 0
+        card.scale = ft.Scale(0.95)
+        self.update()
+        await asyncio.sleep(0.05)
+        card.opacity = 1
+        card.scale = ft.Scale(1.0)
+        self.update()
+
+    async def animate_exit(self):
+        """任务删除退出动画：淡出并缩小。"""
+        card = self.display_view.content
+        card.opacity = 0
+        card.scale = ft.Scale(0.9)
+        self.update()
+        await asyncio.sleep(0.25)
+
+    def _on_card_hover(self, e):
+        """鼠标悬停时卡片轻微抬升。"""
+        card = self.display_view.content
+        if e.data == "true":
+            card.shadow = ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=8,
+                color=ft.Colors.with_opacity(0.15, ft.Colors.BLACK),
+                offset=ft.Offset(0, 2),
+            )
+        else:
+            card.shadow = ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=0,
+                color=ft.Colors.with_opacity(0, ft.Colors.BLACK),
+                offset=ft.Offset(0, 0),
+            )
+        self.update()
