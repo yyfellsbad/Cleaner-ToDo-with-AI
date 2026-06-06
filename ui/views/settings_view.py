@@ -444,7 +444,7 @@ class SettingsView(ft.Column):
                     ft.Text(t("settings.tutorial.desc"), size=14, color=AppColors.TEXT_HINT),
                     ft.Container(height=8),
                     ft.Button(
-                        text=t("settings.tutorial.btn"),
+                        content=ft.Text(t("settings.tutorial.btn")),
                         icon=ft.Icons.SCHOOL_OUTLINED,
                         on_click=self._launch_tutorial,
                         width=200,

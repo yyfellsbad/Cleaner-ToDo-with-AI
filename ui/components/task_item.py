@@ -43,7 +43,7 @@ class Task(ft.Column):
         self.repeat_days = repeat_days
         self.repeat_mode = repeat_mode
         self.completed_dates = completed_dates or []
-        self._is_new = False  # 标记是否为新添加的任务
+        self._is_new = False  # 标记是否为新添加的任务（入场动画用）
 
     @property
     def expired(self) -> bool:
@@ -309,6 +309,10 @@ class Task(ft.Column):
             card_opacity = 1.0
             status_tag = None
 
+        # 新任务入场动画：初始透明
+        if self._is_new:
+            card_opacity = 0.0
+
         self._status_tag = status_tag
 
         self.display_view = ft.GestureDetector(
@@ -539,7 +543,7 @@ class Task(ft.Column):
         # 完成时短暂高亮后变暗
         if self.completed:
             card.bgcolor = ft.Colors.with_opacity(0.15, ft.Colors.PRIMARY)
-            self.update()
+            card.update()
             await asyncio.sleep(0.3)
         self._refresh_card_style()
         self._refresh_date_display()
@@ -611,17 +615,6 @@ class Task(ft.Column):
             card.opacity = 1.0
         # 标记由 build() 静态生成，状态变更后通过 load_tasks 重建
 
-    async def animate_entrance(self):
-        """新任务入场动画：从下方滑入并淡入。"""
-        card = self.display_view.content
-        card.opacity = 0
-        card.scale = ft.Scale(0.95)
-        self.update()
-        await asyncio.sleep(0.05)
-        card.opacity = 1
-        card.scale = ft.Scale(1.0)
-        self.update()
-
     async def animate_exit(self):
         """任务删除退出动画：淡出并缩小。"""
         card = self.display_view.content
@@ -647,4 +640,4 @@ class Task(ft.Column):
                 color=ft.Colors.with_opacity(0, ft.Colors.BLACK),
                 offset=ft.Offset(0, 0),
             )
-        self.update()
+        card.update()

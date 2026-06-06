@@ -32,6 +32,9 @@ class TodoApp(ft.Column):
         self.pending_confirmation_token = None
         self.undo_stack: list[list[TaskRecord]] = []
         self._restoring = False
+        self._needs_resort = True  # needs sort/filter on next before_update()
+        self._toast_fade_task = None
+        self._current_toast = None
         self.tasks = ft.ReorderableListView(
             expand=True,
             spacing=10,
@@ -42,6 +45,7 @@ class TodoApp(ft.Column):
     # ── 数据操作 ──────────────────────────────────────────
 
     def load_tasks(self):
+        self._needs_resort = True
         self.tasks.controls.clear()
         for record in self.task_service.list_tasks():
             task = Task(
@@ -61,37 +65,52 @@ class TodoApp(ft.Column):
             self.tasks.controls.append(task)
 
     def _show_toast(self, message: str, duration: int = 2000):
-        """显示右下角 Toast 通知。"""
+        """显示右下角 Toast 通知。仅一次 page.update()，淡出后静默移除。"""
+        if self._toast_fade_task and not self._toast_fade_task.done():
+            self._toast_fade_task.cancel()
+            # 清理上一个 toast
+            if self._current_toast and self._current_toast in self.page.overlay:
+                self.page.overlay.remove(self._current_toast)
+
         toast = ft.Container(
-            content=ft.Container(
-                padding=ft.Padding(16, 10, 16, 10),
-                border_radius=8,
-                bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
-                border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-                content=ft.Text(
-                    message,
-                    color=ft.Colors.ON_SURFACE,
-                    size=13,
-                ),
-            ),
-            alignment=ft.Alignment(1.0, 1.0),  # 右下角
-            padding=ft.Padding(0, 0, 20, 20),
+            padding=ft.Padding(16, 10, 16, 10),
+            border_radius=8,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
             animate_opacity=300,
             opacity=1,
+            content=ft.Text(message, color=ft.Colors.ON_SURFACE, size=13),
         )
-        self.page.overlay.append(toast)
-        self.page.update()
+        # Column 控制垂直（底部），Row 控制水平（右侧）
+        wrapper = ft.Column(
+            expand=True,
+            alignment=ft.MainAxisAlignment.END,
+            controls=[
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.END,
+                    controls=[
+                        ft.Container(
+                            padding=ft.Padding(0, 0, 20, 20),
+                            content=toast,
+                        ),
+                    ],
+                ),
+            ],
+        )
+        self._current_toast = wrapper
+        self.page.overlay.append(wrapper)
+        self.page.update()  # 唯一一次 page.update
 
         async def _fade_out():
             await asyncio.sleep(duration / 1000)
             toast.opacity = 0
-            self.page.update()
+            self.page.update()  # 触发动画
             await asyncio.sleep(0.3)
-            if toast in self.page.overlay:
-                self.page.overlay.remove(toast)
-                self.page.update()
+            if wrapper in self.page.overlay:
+                self.page.overlay.remove(wrapper)
+            # 不再调用 page.update()，静默移除
 
-        asyncio.ensure_future(_fade_out())
+        self._toast_fade_task = asyncio.ensure_future(_fade_out())
 
     def save_task(self, task):
         if task.task_id is not None:
@@ -950,6 +969,7 @@ class TodoApp(ft.Column):
 
     async def add_clicked(self, e):
         if self.new_task.value:
+            self._needs_resort = True
             self.push_undo_snapshot()
             picker = self._new_task_picker
             desc = (self._new_task_desc.value or "").strip()
@@ -977,15 +997,11 @@ class TodoApp(ft.Column):
                 task_record.completed_dates,
             )
             task.key = str(task_record.id)
+            task._is_new = True
             self.tasks.controls.append(task)
             self.new_task.value = ""
-            self.update()
-            await asyncio.sleep(0.05)  # 等待 Flet 渲染新控件
-            await task.animate_entrance()
-            self._show_toast(t("toast.task_added", task_record.name))
             self._new_task_desc.value = ""
             self._new_task_desc.visible = False
-            # 重置重复设置
             for chip in self._new_freq_chips.controls:
                 chip.selected = (chip.data == 0)
             self._new_custom_days.value = ""
@@ -994,8 +1010,19 @@ class TodoApp(ft.Column):
             self._new_task_date_label.visible = False
             self._new_task_picker_panel.visible = False
             picker.reset()
+            # build() 看到 _is_new=True → card.opacity=0，首帧不可见
+            # 一次 update 完成：排序 + 任务列表 + toast
+            self._show_toast(t("toast.task_added", task_record.name))
+            task._is_new = False
+            # 入场动画：fire-and-forget，不阻塞
+            async def _entrance():
+                await asyncio.sleep(0.05)
+                card = task.display_view.content
+                card.opacity = 1
+                card.scale = ft.Scale(1.0)
+                task.update()
+            asyncio.ensure_future(_entrance())
             await self.new_task.focus()
-            self.update()
 
     async def _on_new_task_focus(self, e):
         if not self._new_task_picker_panel.visible:
@@ -1085,10 +1112,11 @@ class TodoApp(ft.Column):
         async def _confirm(e):
             self.page.pop_dialog()
             self.push_undo_snapshot()
+            self._needs_resort = False  # 动画期间不触发排序
             await task.animate_exit()
             self.tasks.controls.remove(task)
             self.delete_task(task)
-            self.update()
+            self._needs_resort = True
             self._show_toast(t("toast.task_deleted", task.task_name))
 
         def _cancel(e):
@@ -1117,6 +1145,7 @@ class TodoApp(ft.Column):
         self.update()
 
     def clear_clicked(self, e):
+        self._needs_resort = True
         self.push_undo_snapshot()
         count = 0
         for task in self.tasks.controls[:]:
@@ -1124,15 +1153,19 @@ class TodoApp(ft.Column):
                 self.tasks.controls.remove(task)
                 self.delete_task(task)
                 count += 1
-        self.update()
         if count > 0:
             self._show_toast(t("toast.tasks_cleared", count))
+        else:
+            self.update()
 
     # ── 生命周期 & 状态同步 ──────────────────────────────
 
     def before_update(self):
         if not hasattr(self, "items_left"):
             return
+        if not self._needs_resort:
+            return
+        self._needs_resort = False
         self._sync_filter_highlight()
         self._apply_sort()
         status = self._current_filter
@@ -1194,11 +1227,13 @@ class TodoApp(ft.Column):
 
     def _on_sort_change(self, e):
         self._sort_mode = e.control.value
+        self._needs_resort = True
         self.update()
 
     # ── 聊天交互 ──────────────────────────────────────────
 
     async def handle_user_message(self, e):
+        self._needs_resort = True
         text = (self.command_input.value or "").strip()
         if not text:
             return
@@ -1372,6 +1407,7 @@ class TodoApp(ft.Column):
 
     def _set_filter(self, label: str):
         self._current_filter = label
+        self._needs_resort = True
         self.update()
 
     def _sync_filter_highlight(self):

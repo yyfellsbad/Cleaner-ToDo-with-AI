@@ -7,6 +7,7 @@
 - 2026-05-29：统计页面（flet-charts 环状图/柱状图、入场动画、今日待办、7 天趋势）
 - 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）、热力图+每日完成度评估、主题适配、项目清理、窗口位置记忆
 - 2026-06-06：窗口状态修复（事件类型、多显示器、全屏记忆）、系统通知功能（winotify+DND+去重+调度器+设置页）、重复任务打卡实时更新、UI 冻结修复（减少 update 调用）、onboarding 教程重写（7 步+AI/任务/视图教程）、设置页教程入口、取消追踪 pyc/tasks.db
+- 2026-06-07：UI 冻结彻底修复（_needs_resort 标志+card 级 update+fire-and-forget 动画+toast 优化）、onboarding 统一卡片高度+固定按钮位置、Flet 0.85 API 兼容修复
 
 ---
 
@@ -319,7 +320,6 @@
 | `ui/views/todo_view.py` | 去除持续开关、思考动画、Markdown 气泡、async LLM、自动滚动 |
 | `ui/theme.py` | 新增 `DATE_ONGOING` 颜色 |
 | `app.py` | `SettingRepo` 实例传递给 `TodoApp` |
-| `CLAUDE.md` | 更新架构说明、UI 约定、文件描述 |
 | `README.md` | 补充新功能列表、更新项目结构 |
 | `FILE_CONTENTS.md` | 全面更新各模块文档 |
 
@@ -473,7 +473,6 @@
 | `ui/components/date_picker.py` | i18n（周期/月份名改为函数） |
 | `ui/theme.py` | i18n（主题色标签） |
 | `app.py` | 窗口图标 + LLMConfigManager 初始化 |
-| `CLAUDE.md` | 更新架构说明 |
 | `README.md` | 补充新功能列表 |
 
 ---
@@ -542,7 +541,6 @@
 | `ui/views/calendar_view.py` | each 模式多日显示 + 圆点颜色 |
 | `ui/views/stats_view.py` | 重复任务完成/过期/今日判断 |
 | `ui/i18n.py` | 5 个重复相关翻译键 |
-| `CLAUDE.md` | 更新 key files + UI conventions |
 | `README.md` | 新增重复任务功能 |
 
 ---
@@ -586,7 +584,6 @@
 | `ui/views/calendar_view.py` | 详情面板显示重复标签 + 进度 |
 | `ui/views/stats_view.py` | 今日待办显示重复标签 |
 | `ui/i18n.py` | 2 个新翻译键 |
-| `CLAUDE.md` | 更新 key files + UI conventions |
 | `README.md` | 更新重复任务功能描述 |
 
 ---
@@ -645,7 +642,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | 文件 | 变更类型 |
 |---|---|
 | `ui/views/todo_view.py` | 新建任务区新增重复设置行 + 传递参数 + 重置 + i18n |
-| `CLAUDE.md` | 更新 UI conventions |
 | `optimize.md` | 追加本次优化记录 |
 
 ---
@@ -705,7 +701,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/settings_view.py` | 预设性格 Chip 行 |
 | `services/llm_service.py` | system prompt 新增七天计划示例 |
 | `ui/i18n.py` | 新增 5 个翻译键 |
-| `CLAUDE.md` | 更新 UI conventions |
 | `README.md` | 更新功能列表 |
 
 ---
@@ -758,7 +753,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `app.py` | 实例化 DailyAssessmentRepo，传给 TodoApp |
 | `ui/views/todo_view.py` | 接收 assessment_repo，传给 StatsView |
 | `ui/i18n.py` | 新增 11 个热力图/判定翻译键 |
-| `CLAUDE.md` | 更新 stats 描述 + key files |
 | `README.md` | 更新统计功能 + 项目结构 |
 | `optimize.md` | 追加本次优化记录 |
 
@@ -788,7 +782,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 
 **文档更新：**
 - `FILE_CONTENTS.md`：删除第 6 节空骨架文件列表，更新各文件描述（stats_view 热力图、settings_view 预设性格、todo_view 聊天改进、app.py 依赖注入、新增 daily_assessment_repo 和 llm_config_manager）
-- `CLAUDE.md`：更新 key files 表和 UI conventions
 - `README.md`：更新功能列表和项目结构
 
 ---
@@ -799,7 +792,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 |---|---|
 | `ui/views/stats_view.py` | 颜色改为 Material 3 语义色 |
 | `FILE_CONTENTS.md` | 删除空骨架节 + 更新文件描述 |
-| `CLAUDE.md` | 更新 key files + UI conventions |
 | `README.md` | 更新功能列表 + 项目结构 |
 | 8 个空 .py 文件 | **删除** |
 | `core/data/` | **删除**（重复数据库目录） |
@@ -974,7 +966,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/stats_view.py` | 热力图hover效果 |
 | `ui/i18n.py` | 新增 5 个键（3 toast + 2 empty state） |
 | `app.py` | 注册键盘快捷键处理器 |
-| `CLAUDE.md` | 更新 UI conventions |
 | `optimize.md` | 追加优化记录 |
 | `人机交互技术体现.md` | **新增** — 人机交互技术分析文档 |
 
@@ -1199,7 +1190,6 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `services/task_service.py` | update_task 新增 completed_dates 参数 |
 | `ui/i18n.py` | 新增 20 个通知相关翻译键 |
 | `requirements.txt` | 新增 winotify>=1.1.0 |
-| `CLAUDE.md` | 更新架构、key files、UI conventions、通知系统文档 |
 | `README.md` | 新增系统通知功能、更新项目结构 |
 | `optimize.md` | 追加本次优化记录 |
 
@@ -1249,3 +1239,100 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/settings_view.py` | 新增"教程"导航项 + 教程启动/关闭逻辑 |
 | `app.py` | 保存 `_todo_app_ref` 引用 |
 | `ui/i18n.py` | 新增 23 个教程翻译键 + `nav.tutorial` |
+
+---
+
+## 44. UI 冻结彻底修复
+
+**问题：** 任务创建或删除后 ~1 秒内所有控件无法交互。此前的 `_dirty` 标志优化（#43 前半部分）减少了不必要的排序，但冻结仍然存在。
+
+**根因分析：**
+每次 `update()` 调用都是同步 IPC 往返（Python → Flutter 引擎），包含控制树 diff 计算、序列化和传输。`TodoApp` 包含 50+ 任务控件，每次 `self.update()` 都要序列化整个子树。
+
+| 流程 | 原始 update 次数 | 瓶颈 |
+|------|------------------|------|
+| 创建 | 3（self.update + task.update + page.update for toast） | 3 次 IPC |
+| 删除 | 2（card.update + page.update for toast） | 2 次 IPC + 250ms sleep |
+
+**修复方案：**
+
+### A. `_needs_resort` 标志（todo_view.py）
+- `before_update()` 中检查 `_needs_resort`，为 False 时直接返回，跳过排序+可见性循环
+- 仅在任务列表真正变化时设置为 True（load_tasks, add_clicked, task_delete, clear_clicked, _on_sort_change, handle_user_message, _set_filter）
+- `_dirty` 重命名为 `_needs_resort`（避免与 Flet 内部 `_dirty` dict 冲突）
+
+### B. Card 级 update（task_item.py）
+- `_on_card_hover`：`self.update()` → `card.update()`（仅更新卡片容器，不触发父级 before_update）
+- `status_changed` 完成高亮：`self.update()` → `card.update()`
+
+### C. 入场动画 fire-and-forget（todo_view.py）
+- `add_clicked`：entrance 动画改为 `asyncio.ensure_future(_entrance())`，不阻塞主流程
+- 一次 `self.update()` 完成：排序 + 任务列表 + toast
+
+### D. 删除动画优化（todo_view.py）
+- `task_delete._confirm`：动画前设置 `_needs_resort = False`，动画期间 `task.update()` 不触发排序
+- 动画后恢复 `_needs_resort = True`，一次 `self.update()` 完成：排序 + 移除 + toast
+
+### E. Toast 优化（todo_view.py）
+- `_show_toast` 使用 `page.overlay` + Column(expand=True) + Row(alignment=END) 定位右下角
+- 淡出后静默移除（不再调用最终的 `page.update()`）
+- `_toast_fade_task` 管理：新 toast 自动取消上一个
+
+**效果：**
+| 流程 | 修复后 update 次数 | 说明 |
+|------|-------------------|------|
+| 创建 | 1（self.update 含 toast）+ fire-and-forget 动画 | 1 次 IPC |
+| 删除 | 1（self.update 含 toast）+ 1 card.update（动画） | card.update 不触发父级排序 |
+
+---
+
+## 45. Onboarding 统一卡片高度 + 固定按钮位置
+
+**问题：**
+1. 各步骤内容高度不一，卡片大小不同
+2. 导航按钮（上一步/下一步）位置随内容变化，交互不一致
+3. 步骤 2（AI 教程 3 组聊天气泡）和步骤 4（视图教程垂直列表）超出视口
+
+**修复 `ui/views/onboarding_view.py`：**
+
+### A. 统一卡片结构
+- `_build_step()` 重构：步骤构建器只返回内容 Column，dots + 按钮由 `_build_step()` 统一添加
+- 内容区使用 `ft.Column(height=540, alignment=CENTER)` 包裹，所有步骤统一高度 + 垂直居中
+- 底部导航固定在内容区下方，所有步骤位置一致
+
+### B. 步骤内容优化
+- Step 2（AI 教程）：3 组聊天气泡 → 2 组，气泡 padding 缩小 `(14,10)` → `(10,8)`
+- Step 4（视图教程）：垂直列表 → 2×2 网格布局，图标缩小 44→36px
+
+### C. 外层容器
+- 卡片 padding `(48,36)` → `(40,24)`
+- 各步骤 spacer 统一：dots 前 16px，dots 后 20px
+
+---
+
+## 46. Flet 0.85 API 兼容修复
+
+**问题：**
+1. `ft.Button(text=...)` → TypeError：Flet 0.85 Button 不接受 `text=` 关键字参数
+2. `ft.OutlinedButton(text=...)` → 同上
+3. `Task` 对象 `display_view` 在 `__init__` 时不存在（`build()` 懒创建）
+4. `_dirty` 属性名与 Flet 内部 `_dirty` dict 冲突
+
+**修复：**
+- `ft.Button(text=X)` → `ft.Button(content=ft.Text(X))`（onboarding_view.py 5 处、settings_view.py 1 处）
+- `ft.OutlinedButton(text=X)` → `ft.OutlinedButton(X)`（位置参数）
+- `animate_entrance()` 移除，改用 `_is_new` 标志 + `build()` 设置 `opacity=0` + `add_clicked` fire-and-forget 动画
+- `_dirty` 重命名为 `_needs_resort`
+
+---
+
+## 修改文件清单（2026-06-07 UI 冻结+Onboarding）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/todo_view.py` | `_needs_resort` 标志、toast 改用 page.overlay、add_clicked fire-and-forget、task_delete 动画前禁用排序、`_current_toast`/`_toast_fade_task` 管理 |
+| `ui/components/task_item.py` | `_on_card_hover`/`status_changed` 改用 `card.update()`、`_is_new` 标志 |
+| `ui/views/onboarding_view.py` | 统一卡片高度（540px Column）、固定按钮位置、2 组聊天气泡、Step 4 网格布局、Flet API 修复 |
+| `ui/views/settings_view.py` | `ft.Button` API 修复 |
+| `README.md` | 更新教程功能描述 |
+| `optimize.md` | 追加本次优化记录 |

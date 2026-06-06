@@ -71,7 +71,7 @@ class OnboardingView(ft.Column):
                     alignment=ft.Alignment.CENTER,
                     padding=ft.Padding(20, 20, 20, 20),
                     content=ft.Container(
-                        padding=ft.Padding(48, 36, 48, 36),
+                        padding=ft.Padding(40, 24, 40, 24),
                         border_radius=16,
                         bgcolor=AppColors.PANEL_BG,
                         content=self._build_step(0),
@@ -94,9 +94,62 @@ class OnboardingView(ft.Column):
             self._build_api_setup,
             self._build_done,
         ]
-        if 0 <= step < len(builders):
-            return builders[step]()
-        return self._build_welcome()
+        if not (0 <= step < len(builders)):
+            return self._build_welcome()
+
+        step_content = builders[step]()
+
+        # 底部导航：第 0 步和最后一步用特殊按钮，其余用标准导航行
+        if step == 0:
+            bottom = ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+                controls=[
+                    self._build_dots(),
+                    ft.Container(height=12),
+                    ft.Button(
+                        content=ft.Text(t("onboarding.btn_next")),
+                        on_click=self._next,
+                        width=220,
+                        height=50,
+                    ),
+                    ft.TextButton(t("onboarding.btn_skip"), on_click=self._complete),
+                ],
+            )
+        elif step == self.TOTAL_STEPS - 1:
+            bottom = ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+                controls=[
+                    self._build_dots(),
+                    ft.Container(height=12),
+                    ft.Button(
+                        content=ft.Text(t("onboarding.btn_start")),
+                        on_click=self._complete,
+                        width=220,
+                        height=50,
+                    ),
+                ],
+            )
+        else:
+            bottom = ft.Column(
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+                controls=[self._build_dots(), ft.Container(height=4), self._build_nav_row()],
+            )
+
+        return ft.Column(
+            spacing=0,
+            controls=[
+                ft.Column(
+                    height=540,
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[step_content],
+                ),
+                bottom,
+            ],
+        )
 
     # ── Step 0: 欢迎 ────────────────────────────────────
 
@@ -120,20 +173,6 @@ class OnboardingView(ft.Column):
                     size=16,
                     color=AppColors.TEXT_HINT,
                     text_align=ft.TextAlign.CENTER,
-                ),
-                ft.Container(height=40),
-                self._build_dots(),
-                ft.Container(height=28),
-                ft.Button(
-                    text=t("onboarding.btn_next"),
-                    on_click=self._next,
-                    width=220,
-                    height=50,
-                ),
-                ft.Container(height=8),
-                ft.TextButton(
-                    t("onboarding.btn_skip"),
-                    on_click=self._complete,
                 ),
             ],
         )
@@ -197,12 +236,8 @@ class OnboardingView(ft.Column):
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Text(t("onboarding.step_features"), size=26, weight=ft.FontWeight.BOLD),
-                ft.Container(height=24),
+                ft.Container(height=20),
                 ft.Container(width=580, content=grid),
-                ft.Container(height=24),
-                self._build_dots(),
-                ft.Container(height=28),
-                self._build_nav_row(),
             ],
         )
 
@@ -211,7 +246,6 @@ class OnboardingView(ft.Column):
     def _build_ai_tutorial(self):
         examples = [
             (t("onboarding.ai_ex_add"), True, t("onboarding.ai_ex_add_resp")),
-            (t("onboarding.ai_ex_query"), True, t("onboarding.ai_ex_query_resp")),
             (t("onboarding.ai_ex_plan"), True, t("onboarding.ai_ex_plan_resp")),
         ]
         chat_rows = []
@@ -239,15 +273,15 @@ class OnboardingView(ft.Column):
                     color=AppColors.TEXT_HINT,
                     text_align=ft.TextAlign.CENTER,
                 ),
-                ft.Container(height=20),
+                ft.Container(height=16),
                 ft.Container(
                     width=440,
-                    padding=ft.Padding(20, 16, 20, 16),
+                    padding=ft.Padding(16, 12, 16, 12),
                     border_radius=12,
                     bgcolor=ft.Colors.SURFACE,
                     border=ft.Border.all(1, ft.Colors.with_opacity(0.15, ft.Colors.OUTLINE)),
                     content=ft.Column(
-                        spacing=10,
+                        spacing=8,
                         controls=chat_rows,
                     ),
                 ),
@@ -264,16 +298,12 @@ class OnboardingView(ft.Column):
                         ],
                     ),
                 ),
-                ft.Container(height=24),
-                self._build_dots(),
-                ft.Container(height=28),
-                self._build_nav_row(),
             ],
         )
 
     def _chat_bubble(self, text: str, is_user: bool) -> ft.Row:
         bubble = ft.Container(
-            padding=ft.Padding(14, 10, 14, 10),
+            padding=ft.Padding(10, 8, 10, 8),
             border_radius=ft.BorderRadius(14, 14, 4, 14) if is_user else ft.BorderRadius(14, 14, 14, 4),
             bgcolor=ft.Colors.PRIMARY_CONTAINER if is_user else ft.Colors.SECONDARY_CONTAINER,
             content=ft.Text(text, size=13, selectable=True),
@@ -349,10 +379,6 @@ class OnboardingView(ft.Column):
                 ft.Text(t("onboarding.tasks_tutorial"), size=26, weight=ft.FontWeight.BOLD),
                 ft.Container(height=20),
                 ft.Container(width=580, content=ft.Column(spacing=8, controls=rows)),
-                ft.Container(height=24),
-                self._build_dots(),
-                ft.Container(height=28),
-                self._build_nav_row(),
             ],
         )
 
@@ -370,31 +396,52 @@ class OnboardingView(ft.Column):
         for icon, title, desc, bg in items:
             cards.append(
                 ft.Container(
-                    padding=ft.Padding(18, 16, 18, 16),
-                    border_radius=12,
+                    padding=ft.Padding(14, 12, 14, 12),
+                    border_radius=10,
                     bgcolor=bg,
                     content=ft.Row(
-                        spacing=16,
+                        spacing=12,
                         controls=[
                             ft.Container(
-                                width=44,
-                                height=44,
-                                border_radius=12,
+                                width=36,
+                                height=36,
+                                border_radius=10,
                                 alignment=ft.Alignment.CENTER,
-                                content=ft.Icon(icon, size=24, color=ft.Colors.PRIMARY),
+                                content=ft.Icon(icon, size=20, color=ft.Colors.PRIMARY),
                             ),
                             ft.Column(
-                                spacing=4,
+                                spacing=3,
                                 expand=True,
                                 controls=[
-                                    ft.Text(title, size=15, weight=ft.FontWeight.W_600),
-                                    ft.Text(desc, size=13, color=AppColors.TEXT_HINT),
+                                    ft.Text(title, size=14, weight=ft.FontWeight.W_600),
+                                    ft.Text(desc, size=12, color=AppColors.TEXT_HINT),
                                 ],
                             ),
                         ],
                     ),
                 )
             )
+
+        # 2x2 网格
+        grid = ft.Column(
+            spacing=10,
+            controls=[
+                ft.Row(
+                    spacing=10,
+                    controls=[
+                        ft.Container(expand=True, content=cards[0]),
+                        ft.Container(expand=True, content=cards[1]),
+                    ],
+                ),
+                ft.Row(
+                    spacing=10,
+                    controls=[
+                        ft.Container(expand=True, content=cards[2]),
+                        ft.Container(expand=True, content=cards[3]),
+                    ],
+                ),
+            ],
+        )
 
         return ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -409,12 +456,8 @@ class OnboardingView(ft.Column):
                 ),
                 ft.Container(height=16),
                 ft.Text(t("onboarding.views_tutorial"), size=26, weight=ft.FontWeight.BOLD),
-                ft.Container(height=20),
-                ft.Container(width=520, content=ft.Column(spacing=10, controls=cards)),
-                ft.Container(height=24),
-                self._build_dots(),
-                ft.Container(height=28),
-                self._build_nav_row(),
+                ft.Container(height=16),
+                ft.Container(width=580, content=grid),
             ],
         )
 
@@ -451,13 +494,13 @@ class OnboardingView(ft.Column):
                         spacing=12,
                         controls=[
                             ft.Button(
-                                text=t("onboarding.api_test"),
+                                content=ft.Text(t("onboarding.api_test")),
                                 on_click=self._test_api,
                                 height=42,
                                 ref=self._test_btn_ref,
                             ),
                             ft.Button(
-                                text=t("onboarding.api_save"),
+                                content=ft.Text(t("onboarding.api_save")),
                                 on_click=self._save_api_key,
                                 height=42,
                             ),
@@ -490,10 +533,6 @@ class OnboardingView(ft.Column):
                 ),
                 ft.Container(height=20),
                 api_container,
-                ft.Container(height=20),
-                self._build_dots(),
-                ft.Container(height=28),
-                self._build_nav_row(),
             ],
         )
 
@@ -526,15 +565,6 @@ class OnboardingView(ft.Column):
                     size=14,
                     color=AppColors.TEXT_HINT,
                     text_align=ft.TextAlign.CENTER,
-                ),
-                ft.Container(height=40),
-                self._build_dots(),
-                ft.Container(height=28),
-                ft.Button(
-                    text=t("onboarding.btn_start"),
-                    on_click=self._complete,
-                    width=220,
-                    height=50,
                 ),
             ],
         )
@@ -575,7 +605,7 @@ class OnboardingView(ft.Column):
         if self._current_step > 0:
             controls.append(
                 ft.OutlinedButton(
-                    text=t("onboarding.btn_prev"),
+                    t("onboarding.btn_prev"),
                     on_click=self._prev,
                     width=130,
                     height=46,
@@ -584,7 +614,7 @@ class OnboardingView(ft.Column):
         if self._current_step < self.TOTAL_STEPS - 1:
             controls.append(
                 ft.Button(
-                    text=t("onboarding.btn_next"),
+                    content=ft.Text(t("onboarding.btn_next")),
                     on_click=self._next,
                     width=130,
                     height=46,
