@@ -6,6 +6,7 @@ from services.llm_config_manager import LLMConfigManager
 from storage.daily_assessment_repo import DailyAssessmentRepo
 from storage.setting_repo import SettingRepo
 from ui.theme import ThemeManager
+from ui.views.onboarding_view import OnboardingView
 from ui.views.todo_view import TodoApp
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -120,15 +121,29 @@ def main(page: ft.Page):
 
     page.window.on_event = _on_window_event
 
-    todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo)
-    page.add(todo_app)
+    # 检查是否已完成 onboarding
+    if repo.get("onboarding_completed") != "1":
+        onboarding = OnboardingView(
+            on_complete=lambda: _show_main_app(page, repo, tm, llm_cfg, assessment_repo),
+            llm_cfg=llm_cfg,
+        )
+        page.add(onboarding)
+    else:
+        _show_main_app(page, repo, tm, llm_cfg, assessment_repo)
 
     # 注册键盘快捷键
     def _on_page_keyboard(e: ft.KeyboardEvent):
-        if hasattr(todo_app, '_keyboard_handler'):
-            todo_app._keyboard_handler(e)
+        if hasattr(page.controls[0], '_keyboard_handler'):
+            page.controls[0]._keyboard_handler(e)
 
     page.on_keyboard_event = _on_page_keyboard
+
+
+def _show_main_app(page: ft.Page, repo, tm, llm_cfg, assessment_repo):
+    """显示主应用，移除 onboarding（如果存在）"""
+    page.controls.clear()
+    todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo)
+    page.add(todo_app)
 
 
 if __name__ == "__main__":
