@@ -137,6 +137,7 @@ class TaskService:
         completed: bool | None = None,
         repeat_days: int | None = None,
         repeat_mode: str | None = None,
+        completed_dates: list[str] | None = None,
     ) -> TaskRecord:
         task = self.repository.get_task(task_id)
         if task is None:
@@ -158,6 +159,8 @@ class TaskService:
             task.repeat_days = repeat_days
         if repeat_mode is not None:
             task.repeat_mode = repeat_mode
+        if completed_dates is not None:
+            task.completed_dates = completed_dates
         return self.repository.update_task(task)
 
     def delete_task(self, task_id: int) -> None:

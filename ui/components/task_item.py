@@ -82,6 +82,24 @@ class Task(ft.Column):
     def is_recurring(self) -> bool:
         return self.repeat_days > 0 and self.end_date is not None
 
+    def mark_occurrence(self, d) -> bool:
+        key = d.isoformat()
+        if key in self.completed_dates:
+            return False
+        self.completed_dates.append(key)
+        done, total = self._repeat_progress()
+        if done >= total:
+            self.completed = True
+        return True
+
+    def unmark_occurrence(self, d) -> bool:
+        key = d.isoformat()
+        if key not in self.completed_dates:
+            return False
+        self.completed_dates.remove(key)
+        self.completed = False
+        return True
+
     def _repeat_label(self) -> str:
         if self.repeat_days <= 0:
             return ""
@@ -509,6 +527,14 @@ class Task(ft.Column):
 
     async def status_changed(self, e):
         self.completed = e.control.value
+        # 重复任务 each 模式：打卡/取消打卡当天
+        if self.is_recurring and self.repeat_mode == "each":
+            from datetime import date as _date
+            today = _date.today()
+            if self.completed:
+                self.mark_occurrence(today)
+            else:
+                self.unmark_occurrence(today)
         card = self.display_view.content
         # 完成时短暂高亮后变暗
         if self.completed:
@@ -516,6 +542,7 @@ class Task(ft.Column):
             self.update()
             await asyncio.sleep(0.3)
         self._refresh_card_style()
+        self._refresh_date_display()
         self.app.save_task(self)
 
     def delete_clicked(self, e):

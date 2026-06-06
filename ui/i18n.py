@@ -5,6 +5,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "nav.appearance": {"zh": "外观", "en": "Appearance"},
     "nav.language": {"zh": "语言", "en": "Language"},
     "nav.assistant": {"zh": "助手设置", "en": "Assistant"},
+    "nav.notifications": {"zh": "通知", "en": "Notifications"},
 
     # ── Settings: appearance ───────────────────────────────
     "settings.appearance.title": {"zh": "外观设置", "en": "Appearance"},
@@ -215,6 +216,29 @@ MESSAGES: dict[str, dict[str, str]] = {
     "calendar.today": {"zh": "今天", "en": "Today"},
     "calendar.no_tasks": {"zh": "当日无待办", "en": "No tasks this day"},
     "calendar.task_count": {"zh": "{} 个待办", "en": "{} tasks"},
+
+    # ── Settings: notifications ─────────────────────────────
+    "settings.notifications.title": {"zh": "通知设置", "en": "Notification Settings"},
+    "settings.notifications.enabled": {"zh": "启用通知", "en": "Enable Notifications"},
+    "settings.notifications.advance": {"zh": "提前提醒时间", "en": "Advance Reminder"},
+    "settings.notifications.advance_hint": {"zh": "任务到期前多久发送提醒", "en": "How long before deadline to remind"},
+    "settings.notifications.dnd": {"zh": "免打扰", "en": "Do Not Disturb"},
+    "settings.notifications.dnd_enabled": {"zh": "启用免打扰时段", "en": "Enable DND Period"},
+    "settings.notifications.dnd_start": {"zh": "开始时间", "en": "Start Time"},
+    "settings.notifications.dnd_end": {"zh": "结束时间", "en": "End Time"},
+    "settings.notifications.test": {"zh": "发送测试通知", "en": "Send Test Notification"},
+    "settings.notifications.test_ok": {"zh": "测试通知已发送", "en": "Test notification sent"},
+    "settings.notifications.hint": {"zh": "通知将在任务到期、需要打卡时弹出系统通知。", "en": "System notifications for task deadlines and check-ins."},
+
+    # ── Notification bodies ─────────────────────────────────
+    "notif.checkin": {"zh": "打卡提醒", "en": "Check-in"},
+    "notif.ongoing": {"zh": "进行中", "en": "Ongoing"},
+    "notif.expiring": {"zh": "即将过期", "en": "Expiring Soon"},
+    "notif.expired": {"zh": "已过期", "en": "Expired"},
+    "notif.body.checkin": {"zh": "今天需要打卡：{}", "en": "Check in today: {}"},
+    "notif.body.ongoing": {"zh": "任务进行中：{}", "en": "Ongoing: {}"},
+    "notif.body.expiring": {"zh": "即将到期：{}", "en": "Expiring soon: {}"},
+    "notif.body.expired": {"zh": "已过期：{}", "en": "Expired: {}"},
 
     # ── Toast notifications ─────────────────────────────────
     "toast.task_added": {"zh": "已添加任务：{}", "en": "Task added: {}"},

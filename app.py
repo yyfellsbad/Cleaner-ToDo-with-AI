@@ -3,8 +3,11 @@ from pathlib import Path
 import flet as ft
 
 from services.llm_config_manager import LLMConfigManager
+from services.notification_service import NotificationService
+from services.notification_scheduler import NotificationScheduler
 from storage.daily_assessment_repo import DailyAssessmentRepo
 from storage.setting_repo import SettingRepo
+from storage.task_repo import TaskRepository
 from ui.theme import ThemeManager
 from ui.views.todo_view import TodoApp
 
@@ -101,6 +104,10 @@ def main(page: ft.Page):
 
     assessment_repo = DailyAssessmentRepo()
 
+    # 通知系统
+    notif_svc = NotificationService.instance()
+    notif_svc.load(repo)
+
     # 窗口事件：保存位置、大小、最大化/全屏状态
     def _on_window_event(e: ft.WindowEvent):
         if e.type == ft.WindowEventType.RESIZED:
@@ -120,8 +127,12 @@ def main(page: ft.Page):
 
     page.window.on_event = _on_window_event
 
-    todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo)
+    todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo, notification_service=notif_svc)
     page.add(todo_app)
+
+    # 启动通知调度器
+    task_repo = TaskRepository()
+    NotificationScheduler.start(notif_svc, task_repo)
 
     # 注册键盘快捷键
     def _on_page_keyboard(e: ft.KeyboardEvent):

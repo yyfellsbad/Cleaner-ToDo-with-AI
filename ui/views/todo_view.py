@@ -15,11 +15,13 @@ from ui.theme import AppColors, ThemeManager
 
 
 class TodoApp(ft.Column):
-    def __init__(self, theme_manager: ThemeManager, repo=None, config_manager=None, assessment_repo=None):
+    def __init__(self, theme_manager: ThemeManager, repo=None, config_manager=None,
+                 assessment_repo=None, notification_service=None):
         super().__init__()
         self.tm = theme_manager
         self._config_manager = config_manager
         self._assessment_repo = assessment_repo
+        self._notif = notification_service
         self.show_settings = False
         self.show_stats = False
         self.show_calendar = False
@@ -114,6 +116,7 @@ class TodoApp(ft.Column):
                 completed=task.completed,
                 repeat_days=task.repeat_days,
                 repeat_mode=task.repeat_mode,
+                completed_dates=task.completed_dates,
             )
         task.task_id = saved.id
 
@@ -130,7 +133,7 @@ class TodoApp(ft.Column):
 
         # 重建设置视图
         self.settings_view.controls = [
-            SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views)
+            SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif)
         ]
         # 重建统计视图
         new_stats = StatsView(self.task_service, self._assessment_repo)
@@ -716,7 +719,7 @@ class TodoApp(ft.Column):
             expand=True,
             spacing=12,
             visible=self.show_settings,
-            controls=[SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views)],
+            controls=[SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif)],
         )
 
         # ── 统计视图 ──
