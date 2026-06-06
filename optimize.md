@@ -6,6 +6,7 @@
 - 2026-05-27：日期/时间选择器重构、卡片状态标记、LLM 记忆持久化、聊天体验优化
 - 2026-05-29：统计页面（flet-charts 环状图/柱状图、入场动画、今日待办、7 天趋势）
 - 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）、热力图+每日完成度评估、主题适配、项目清理、窗口位置记忆
+- 2026-06-06：窗口状态修复（事件类型、多显示器、全屏记忆）、系统通知功能（winotify+DND+去重+调度器+设置页）、重复任务打卡实时更新
 
 ---
 
@@ -1095,3 +1096,109 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/todo_view.py` | 模式选择移除、重复选项注入 picker 右列、抽屉阴影优化 |
 | `ui/views/calendar_view.py` | 阴影+圆角优化 |
 | `.gitignore` | 添加 .agents/、skills-lock.json |
+
+---
+
+## 41. 窗口状态记忆修复 + 多显示器支持
+
+**问题：**
+1. 窗口位置/大小不记忆 — 数据库中 `win.*` 全为 `None`
+2. 启动时黑屏闪烁 — 默认大小窗口先出现再跳变为正确大小
+3. 不支持多显示器 — 窗口可能恢复到已断开的显示器上
+4. 不记忆最大化/全屏状态
+
+**根因分析：**
+- `app.py` 监听 `ft.WindowEventType.RESIZE` / `MOVE`，但 Flet 0.85.2 实际触发的是 `RESIZED` / `MOVED`（过去时态），事件类型不匹配导致回调从未执行
+- Flet 原生窗口在 Python 代码执行前就已创建并可见，`main()` 中设置尺寸有延迟
+
+**修复 `app.py`：**
+- 事件类型：`RESIZE` → `RESIZED`，`MOVE` → `MOVED`
+- 新增 `before_main()` 回调：在 `main()` 之前恢复窗口尺寸/位置，减少跳变
+- 新增 `_get_screens()`：通过 Win32 API `EnumDisplayMonitors` 获取所有显示器工作区域
+- 新增 `_pos_on_screen()`：判断窗口位置是否有 30% 以上面积落在可见屏幕内，否则居中到主屏幕
+- 新增 `MAXIMIZE`/`UNMAXIMIZE`/`ENTER_FULL_SCREEN`/`LEAVE_FULL_SCREEN` 事件监听，持久化 `win.maximized` 和 `win.full_screen`
+- 启动时优先恢复全屏，其次最大化
+
+**效果：** 窗口状态正确记忆和恢复，多显示器场景下窗口始终出现在可见屏幕上。
+
+---
+
+## 42. 系统通知功能
+
+**问题：** 无 OS 级通知能力，用户无法在任务到期、需要打卡时收到系统弹窗提醒。
+
+**新增 `services/notification_service.py`：**
+- `NotificationService` 单例，基于 `winotify` 库发送 Windows 原生 toast 通知
+- `send(title, body, tag)`：发送通知，自动跳过免打扰时段，按 tag 去重（每任务每天一次）
+- `send_test()`：开发者测试接口，绕过 DND 和去重
+- 免打扰逻辑：支持跨午夜时段（如 23:00–08:00 → now >= 23:00 OR < 08:00）
+- 去重：`_sent_tags: set[str]` 存储已发 tag，每天自动清空
+- 设置通过 `SettingRepo` 持久化：`notif.enabled`、`notif.advance_min`、`notif.dnd_enabled`、`notif.dnd_start`、`notif.dnd_end`
+
+**新增 `services/notification_scheduler.py`：**
+- `NotificationScheduler` 静态类，`start()` 启动 asyncio 后台循环（60 秒间隔）
+- 检查逻辑：
+  - 重复 "each"：今日是打卡日且未打卡 → "打卡提醒"
+  - 重复 "once"：今日在范围内且未完成 → "进行中"
+  - 单次 + end_date：距截止 ≤ advance_min → "即将过期"
+  - 已过期（截止日 < 今天，未完成）→ "已过期"
+- tag 格式：`task_{id}_{date}_{type}`，确保每任务每天每种类型只通知一次
+
+**改造 `ui/views/settings_view.py`：**
+- 新增 "通知" 导航项（`NOTIFICATIONS_OUTLINED` 图标）
+- `_build_notifications()`：启用开关、提前提醒时间下拉（5/15/30/60 分钟）、免打扰开关 + 时间范围下拉（30 分钟间隔）、测试通知按钮
+
+**改造 `app.py`：**
+- 初始化 `NotificationService.instance().load(repo)`
+- 创建 `TaskRepository` 并启动 `NotificationScheduler.start()`
+- 将 `notif_svc` 传递给 `TodoApp`
+
+**新增 `winotify>=1.1.0` 依赖。**
+
+---
+
+## 43. 重复任务打卡实时更新
+
+**问题：** 重复任务 "each" 模式下，勾选/取消勾选卡片后 "n/m 已打卡" 不更新。
+
+**根因分析：**
+- `task_item.py:status_changed()` 只设置 `self.completed = e.control.value`，从未调用 `mark_occurrence()`
+- `todo_view.py:save_task()` 调用 `update_task()` 时未传递 `completed_dates`
+- `task_service.py:update_task()` 无 `completed_dates` 参数
+- `Task`（UI widget）与 `TaskRecord`（数据模型）是独立类，`Task` 缺少 `mark_occurrence`/`unmark_occurrence` 方法
+
+**修复 `ui/components/task_item.py`：**
+- `Task` 类新增 `mark_occurrence(d)` 和 `unmark_occurrence(d)` 方法
+- `status_changed()` 改为：重复 each 模式下，勾选 → `mark_occurrence(today)`，取消 → `unmark_occurrence(today)`
+- 打卡后调用 `_refresh_date_display()` 实时更新显示
+
+**修复 `core/models/task.py`：**
+- 新增 `unmark_occurrence(d)` 方法：从 `completed_dates` 移除日期，重置 `completed = False`
+
+**修复 `services/task_service.py`：**
+- `update_task()` 新增 `completed_dates: list[str] | None` 参数
+
+**修复 `ui/views/todo_view.py`：**
+- `save_task()` 传递 `task.completed_dates` 到 `update_task()`
+
+**效果：** 勾选/取消勾选重复任务后，"n/m 已打卡" 实时更新。
+
+---
+
+## 修改文件清单（2026-06-06 通知+修复）
+
+| 文件 | 变更类型 |
+|---|---|
+| `services/notification_service.py` | **新增**：系统通知服务（winotify、DND、去重） |
+| `services/notification_scheduler.py` | **新增**：通知调度器（异步循环，任务检查） |
+| `app.py` | 窗口状态修复（事件类型、多显示器、全屏）+ 通知系统初始化 |
+| `ui/views/settings_view.py` | 新增"通知"设置分区 |
+| `ui/views/todo_view.py` | 传递 notification_service + completed_dates |
+| `ui/components/task_item.py` | 新增 mark/unmark_occurrence + 打卡实时更新 |
+| `core/models/task.py` | 新增 unmark_occurrence |
+| `services/task_service.py` | update_task 新增 completed_dates 参数 |
+| `ui/i18n.py` | 新增 20 个通知相关翻译键 |
+| `requirements.txt` | 新增 winotify>=1.1.0 |
+| `CLAUDE.md` | 更新架构、key files、UI conventions、通知系统文档 |
+| `README.md` | 新增系统通知功能、更新项目结构 |
+| `optimize.md` | 追加本次优化记录 |
