@@ -11,6 +11,73 @@ from ui.views.todo_view import TodoApp
 ROOT_DIR = Path(__file__).resolve().parent
 
 
+def _get_screens():
+    """通过 Win32 API 获取所有显示器的工作区域。"""
+    try:
+        import ctypes
+        import ctypes.wintypes as wintypes
+
+        screens = []
+        MONITORENUMPROC = ctypes.WINFUNCTYPE(
+            wintypes.BOOL,
+            wintypes.HMONITOR,
+            wintypes.HDC,
+            ctypes.POINTER(wintypes.RECT),
+            wintypes.LPARAM,
+        )
+
+        def _cb(hmon, hdc, lprect, lparam):
+            r = lprect.contents
+            screens.append((r.left, r.top, r.right - r.left, r.bottom - r.top))
+            return True
+
+        ctypes.windll.user32.EnumDisplayMonitors(
+            None, None, MONITORENUMPROC(_cb), 0
+        )
+        return screens or [(0, 0, 1920, 1080)]
+    except Exception:
+        return [(0, 0, 1920, 1080)]
+
+
+def _pos_on_screen(x, y, w, h, screens):
+    """判断 (x, y, w, h) 是否有足够面积落在某个屏幕上。"""
+    for sx, sy, sw, sh in screens:
+        ox = max(0, min(x + w, sx + sw) - max(x, sx))
+        oy = max(0, min(y + h, sy + sh) - max(y, sy))
+        if ox * oy > w * h * 0.3:
+            return True
+    return False
+
+
+def before_main(page: ft.Page):
+    """在 main 之前恢复窗口尺寸/位置，窗口首次出现时即为目标大小。"""
+    repo = SettingRepo()
+    screens = _get_screens()
+    pw, ph = screens[0][2], screens[0][3]
+
+    w = repo.get("win.width")
+    h = repo.get("win.height")
+    left = repo.get("win.left")
+    top = repo.get("win.top")
+    page.window.width = float(w) if w else min(1100, pw)
+    page.window.height = float(h) if h else min(800, ph)
+    if left and top:
+        lx, ly = float(left), float(top)
+        if _pos_on_screen(lx, ly, page.window.width, page.window.height, screens):
+            page.window.left = lx
+            page.window.top = ly
+        else:
+            page.window.left = (pw - page.window.width) / 2
+            page.window.top = (ph - page.window.height) / 2
+
+    maximized = repo.get("win.maximized")
+    full_screen = repo.get("win.full_screen")
+    if full_screen == "1":
+        page.window.full_screen = True
+    elif maximized == "1":
+        page.window.maximized = True
+
+
 def main(page: ft.Page):
     page.title = "Cleaner"
     page.padding = 0
@@ -34,32 +101,22 @@ def main(page: ft.Page):
 
     assessment_repo = DailyAssessmentRepo()
 
-    # 恢复上次窗口位置和大小
-    w = repo.get("win.width")
-    h = repo.get("win.height")
-    left = repo.get("win.left")
-    top = repo.get("win.top")
-    if w:
-        page.window.width = float(w)
-    else:
-        page.window.width = 1100
-    if h:
-        page.window.height = float(h)
-    else:
-        page.window.height = 800
-    if left:
-        page.window.left = float(left)
-    if top:
-        page.window.top = float(top)
-
-    # 关闭时保存窗口位置和大小
+    # 窗口事件：保存位置、大小、最大化/全屏状态
     def _on_window_event(e: ft.WindowEvent):
-        if e.type == ft.WindowEventType.RESIZE:
+        if e.type == ft.WindowEventType.RESIZED:
             repo.set("win.width", str(int(page.window.width)))
             repo.set("win.height", str(int(page.window.height)))
-        elif e.type == ft.WindowEventType.MOVE:
+        elif e.type == ft.WindowEventType.MOVED:
             repo.set("win.left", str(int(page.window.left)))
             repo.set("win.top", str(int(page.window.top)))
+        elif e.type == ft.WindowEventType.MAXIMIZE:
+            repo.set("win.maximized", "1")
+        elif e.type == ft.WindowEventType.UNMAXIMIZE:
+            repo.set("win.maximized", "0")
+        elif e.type == ft.WindowEventType.ENTER_FULL_SCREEN:
+            repo.set("win.full_screen", "1")
+        elif e.type == ft.WindowEventType.LEAVE_FULL_SCREEN:
+            repo.set("win.full_screen", "0")
 
     page.window.on_event = _on_window_event
 
@@ -75,4 +132,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(main, before_main=before_main)
