@@ -6,6 +6,7 @@ MESSAGES: dict[str, dict[str, str]] = {
     "nav.language": {"zh": "语言", "en": "Language"},
     "nav.assistant": {"zh": "助手设置", "en": "Assistant"},
     "nav.notifications": {"zh": "通知", "en": "Notifications"},
+    "nav.tutorial": {"zh": "教程", "en": "Tutorial"},
 
     # ── Settings: appearance ───────────────────────────────
     "settings.appearance.title": {"zh": "外观设置", "en": "Appearance"},
@@ -359,6 +360,45 @@ MESSAGES: dict[str, dict[str, str]] = {
     "onboarding.btn_start": {"zh": "开始使用", "en": "Get Started"},
     "onboarding.btn_save": {"zh": "保存并继续", "en": "Save & Continue"},
     "onboarding.dots_hint": {"zh": "第 {} 步，共 {} 步", "en": "Step {} of {}"},
+    "onboarding.btn_skip": {"zh": "跳过教程", "en": "Skip Tutorial"},
+    # ── AI 教程 ──
+    "onboarding.ai_tutorial": {"zh": "AI 助手使用指南", "en": "AI Assistant Guide"},
+    "onboarding.ai_intro": {"zh": "用自然语言和 AI 对话，一句话就能管理任务。打开左侧聊天面板试试：", "en": "Chat with AI in natural language to manage tasks. Open the left chat panel and try:"},
+    "onboarding.ai_ex_add": {"zh": "明天下午三点开会", "en": "Meeting tomorrow at 3pm"},
+    "onboarding.ai_ex_add_resp": {"zh": "好的，已创建任务「开会」，时间为明天 15:00", "en": "Done! Created task 'Meeting' for tomorrow 3:00 PM"},
+    "onboarding.ai_ex_query": {"zh": "这周有什么任务？", "en": "What tasks this week?"},
+    "onboarding.ai_ex_query_resp": {"zh": "本周你有 3 个任务...", "en": "You have 3 tasks this week..."},
+    "onboarding.ai_ex_plan": {"zh": "我接下来该做什么？", "en": "What should I do next?"},
+    "onboarding.ai_ex_plan_resp": {"zh": "建议优先处理「报告」，明天就到期了", "en": "I suggest working on 'Report' — it's due tomorrow"},
+    "onboarding.ai_tip": {"zh": "提示：也可以手动添加和编辑任务", "en": "Tip: You can also add and edit tasks manually"},
+    # ── 任务管理教程 ──
+    "onboarding.tasks_tutorial": {"zh": "任务管理", "en": "Task Management"},
+    "onboarding.tasks_add": {"zh": "添加任务", "en": "Add Tasks"},
+    "onboarding.tasks_add_desc": {"zh": "在顶部输入框输入任务名称，点击日历图标设置日期和时间", "en": "Type a task name in the top input, click the calendar icon to set date & time"},
+    "onboarding.tasks_edit": {"zh": "编辑任务", "en": "Edit Tasks"},
+    "onboarding.tasks_edit_desc": {"zh": "点击卡片上的编辑按钮修改名称、描述、日期和重复设置", "en": "Click the edit button on a card to modify name, description, date & repeat"},
+    "onboarding.tasks_complete": {"zh": "完成任务", "en": "Complete Tasks"},
+    "onboarding.tasks_complete_desc": {"zh": "勾选左侧复选框标记完成，重复任务支持逐日打卡", "en": "Check the left checkbox to mark done — recurring tasks support daily check-in"},
+    "onboarding.tasks_drag": {"zh": "拖拽排序", "en": "Drag & Sort"},
+    "onboarding.tasks_drag_desc": {"zh": "长按任务卡片拖动调整顺序，也可用排序按钮自动排列", "en": "Long-press a card to drag, or use the sort button to auto-arrange"},
+    "onboarding.tasks_filter": {"zh": "筛选与排序", "en": "Filter & Sort"},
+    "onboarding.tasks_filter_desc": {"zh": "按全部/未完成/已完成/已过期筛选，支持按日期、名称、紧迫度排序", "en": "Filter by all/active/completed/expired; sort by date, name, or urgency"},
+    "onboarding.tasks_shortcuts": {"zh": "快捷键", "en": "Keyboard Shortcuts"},
+    "onboarding.tasks_shortcuts_desc": {"zh": "Ctrl+Z 撤销 · Ctrl+N 新建任务 · Esc 关闭面板", "en": "Ctrl+Z undo · Ctrl+N new task · Esc close panel"},
+    # ── 视图教程 ──
+    "onboarding.views_tutorial": {"zh": "多视图与通知", "en": "Views & Notifications"},
+    "onboarding.views_calendar": {"zh": "日历视图", "en": "Calendar View"},
+    "onboarding.views_calendar_desc": {"zh": "点击侧边栏日历图标，月网格展示任务分布，点击日期查看详情", "en": "Click the calendar icon — month grid shows task dots, click a day for details"},
+    "onboarding.views_stats": {"zh": "数据统计", "en": "Statistics"},
+    "onboarding.views_stats_desc": {"zh": "点击侧边栏图表图标，查看任务分布、7 天趋势、GitHub 风格热力图", "en": "Click the chart icon — see task distribution, 7-day trends, and GitHub-style heatmap"},
+    "onboarding.views_notif": {"zh": "系统通知", "en": "Notifications"},
+    "onboarding.views_notif_desc": {"zh": "任务到期、重复打卡时弹出系统通知，可在设置中配置免打扰时段", "en": "System toast for deadlines & check-ins; configure DND in Settings"},
+    "onboarding.views_recurring": {"zh": "重复任务", "en": "Recurring Tasks"},
+    "onboarding.views_recurring_desc": {"zh": "设置每天/隔天/自定义间隔重复，支持「每期独立完成」和「一次即完成」两种模式", "en": "Set daily/custom interval repeats with 'each occurrence' or 'once' modes"},
+    # ── 设置教程入口 ──
+    "settings.tutorial.title": {"zh": "使用教程", "en": "Usage Tutorial"},
+    "settings.tutorial.desc": {"zh": "重新查看功能介绍和使用指南", "en": "Review feature introduction and usage guide"},
+    "settings.tutorial.btn": {"zh": "查看教程", "en": "View Tutorial"},
 }
 
 

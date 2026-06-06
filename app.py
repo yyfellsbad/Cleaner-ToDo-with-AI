@@ -154,6 +154,7 @@ def _show_main_app(page: ft.Page, repo, tm, llm_cfg, assessment_repo, notif_svc)
     """显示主应用，移除 onboarding（如果存在）"""
     page.controls.clear()
     todo_app = TodoApp(tm, repo, llm_cfg, assessment_repo, notification_service=notif_svc)
+    page._todo_app_ref = todo_app
     page.add(todo_app)
 
 

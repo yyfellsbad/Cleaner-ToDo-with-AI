@@ -37,6 +37,7 @@ class SettingsView(ft.Column):
             "language": (t("nav.language"), ft.Icons.LANGUAGE),
             "assistant": (t("nav.assistant"), ft.Icons.SMART_TOY_OUTLINED),
             "notifications": (t("nav.notifications"), ft.Icons.NOTIFICATIONS_OUTLINED),
+            "tutorial": (t("nav.tutorial"), ft.Icons.SCHOOL_OUTLINED),
         }
 
         nav_controls = []
@@ -106,6 +107,8 @@ class SettingsView(ft.Column):
             return self._build_assistant()
         if section == "notifications":
             return self._build_notifications()
+        if section == "tutorial":
+            return self._build_tutorial()
         return ft.Container()
 
     def _build_appearance(self) -> ft.Control:
@@ -430,6 +433,45 @@ class SettingsView(ft.Column):
         self.page.overlay.append(snack)
         snack.open = True
         self.page.update()
+
+    def _build_tutorial(self) -> ft.Control:
+        return ft.Container(
+            padding=ft.Padding(24, 20, 24, 20),
+            content=ft.Column(
+                spacing=20,
+                controls=[
+                    ft.Text(t("settings.tutorial.title"), size=22, weight=ft.FontWeight.BOLD),
+                    ft.Text(t("settings.tutorial.desc"), size=14, color=AppColors.TEXT_HINT),
+                    ft.Container(height=8),
+                    ft.Button(
+                        text=t("settings.tutorial.btn"),
+                        icon=ft.Icons.SCHOOL_OUTLINED,
+                        on_click=self._launch_tutorial,
+                        width=200,
+                        height=48,
+                    ),
+                ],
+            ),
+        )
+
+    def _launch_tutorial(self, e):
+        from ui.views.onboarding_view import OnboardingView
+
+        page = self.page
+        todo_app = getattr(page, '_todo_app_ref', None)
+
+        def _close_tutorial():
+            page.controls.clear()
+            if todo_app:
+                page.add(todo_app)
+
+        onboarding = OnboardingView(
+            on_complete=_close_tutorial,
+            llm_cfg=self._cfg,
+            is_revisit=True,
+        )
+        page.controls.clear()
+        page.add(onboarding)
 
     def _on_nav_click(self, e):
         section = e.control.data

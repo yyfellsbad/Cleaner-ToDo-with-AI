@@ -6,7 +6,7 @@
 - 2026-05-27：日期/时间选择器重构、卡片状态标记、LLM 记忆持久化、聊天体验优化
 - 2026-05-29：统计页面（flet-charts 环状图/柱状图、入场动画、今日待办、7 天趋势）
 - 2026-05-30：AI 助手设置暴露、紧迫排序、日历视图、多语言支持（i18n）、LLM 配置管理器、重复任务（每期独立完成）、热力图+每日完成度评估、主题适配、项目清理、窗口位置记忆
-- 2026-06-06：窗口状态修复（事件类型、多显示器、全屏记忆）、系统通知功能（winotify+DND+去重+调度器+设置页）、重复任务打卡实时更新
+- 2026-06-06：窗口状态修复（事件类型、多显示器、全屏记忆）、系统通知功能（winotify+DND+去重+调度器+设置页）、重复任务打卡实时更新、UI 冻结修复（减少 update 调用）、onboarding 教程重写（7 步+AI/任务/视图教程）、设置页教程入口、取消追踪 pyc/tasks.db
 
 ---
 
@@ -1202,3 +1202,50 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `CLAUDE.md` | 更新架构、key files、UI conventions、通知系统文档 |
 | `README.md` | 新增系统通知功能、更新项目结构 |
 | `optimize.md` | 追加本次优化记录 |
+
+---
+
+## 16. Onboarding 教程重写 + 设置页教程入口
+
+**问题：**
+1. `ElevatedButton` 在 Flet 0.80+ 已弃用，产生 DeprecationWarning
+2. 原 onboarding 仅 4 步，功能介绍过于简略，缺少使用教程
+3. 完成后无法再次查看教程
+
+**修复 `ui/views/onboarding_view.py`：**
+- 全部 `ft.ElevatedButton` → `ft.Button`
+- 从 4 步扩展为 7 步：
+  - Step 0：欢迎（大图标 + 描述 + 跳过按钮）
+  - Step 1：功能概览（2×2 网格卡片，彩色背景）
+  - Step 2：AI 助手教程（模拟聊天气泡展示 3 组对话示例）
+  - Step 3：任务管理教程（6 项操作：添加/编辑/完成/拖拽/筛选/快捷键，两列网格）
+  - Step 4：视图与通知教程（日历/统计/通知/重复任务 4 张卡片）
+  - Step 5：API 设置（保留原有功能）
+  - Step 6：完成（大图标 + 开始使用按钮）
+- 视觉改进：步骤图标用 `border_radius=14` 的彩色容器，聊天气泡用 `PRIMARY_CONTAINER`/`SECONDARY_CONTAINER` 背景
+- 新增 `is_revisit` 参数支持从设置页重新打开
+- 导航按钮自动生成（有上一步时显示"上一步"，最后一步不显示"下一步"）
+
+**修复 `ui/views/settings_view.py`：**
+- 新增 `"tutorial"` 导航项（`SCHOOL_OUTLINED` 图标）
+- 新增 `_build_tutorial()` 方法：标题 + 描述 + "查看教程" 按钮
+- `_launch_tutorial()` 清除页面，显示 OnboardingView；完成后通过 `page._todo_app_ref` 恢复主应用
+
+**修复 `app.py`：**
+- `_show_main_app` 保存 `page._todo_app_ref = todo_app` 供教程返回时使用
+
+**修复 `ui/i18n.py`：**
+- 新增 `nav.tutorial`、AI 教程 7 个键、任务管理教程 7 个键、视图教程 5 个键、设置教程 3 个键，共 23 个翻译键
+
+**效果：** 7 步交互式教程涵盖 AI 对话、任务管理、视图导航、快捷键；设置页可随时重新查看；无 DeprecationWarning。
+
+---
+
+## 修改文件清单（2026-06-06 Onboarding 重写）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/onboarding_view.py` | 全面重写：7 步教程、ft.Button、聊天气泡、网格卡片 |
+| `ui/views/settings_view.py` | 新增"教程"导航项 + 教程启动/关闭逻辑 |
+| `app.py` | 保存 `_todo_app_ref` 引用 |
+| `ui/i18n.py` | 新增 23 个教程翻译键 + `nav.tutorial` |
