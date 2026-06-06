@@ -28,6 +28,7 @@
 - **设置页面**：外观（浅色/深色/跟随系统 + 主题色）、语言、助手设置（API 密钥、Base URL、模型、预设性格阿喵/阿汪/砖家/小冰/默认、聊天人设、测试连接）
 - **日期颜色编码**：今天（橙）、未来（蓝）、过期（灰）、正在持续（绿）
 - **手动操作**：支持直接在右侧面板新增、编辑、删除任务
+- **系统通知**：通过 Windows 原生 toast 通知提醒任务——重复任务打卡提醒、单次/持续任务到期提醒、过期提醒。支持免打扰时段（如 23:00–08:00），可配置提前提醒时间（5/15/30/60 分钟），设置页提供测试按钮
 
 ## 技术栈
 
@@ -82,13 +83,15 @@ services/
   llm_service.py            # LangChain 编排、意图规划、plan_tasks 工具
   llm_config_manager.py     # LLM 配置管理（API 密钥、URL、模型、人设）
   nlp_task_parser.py        # 正则回退解析器、持续时间解析
+  notification_service.py   # 系统通知（winotify、免打扰、去重）
+  notification_scheduler.py # 通知调度（异步循环，60秒检查）
 ui/
   theme.py                  # ThemeManager（浅色/深色/跟随系统、主题色、语言）、AppColors
   i18n.py                   # 多语言翻译系统（中/英，190+ 翻译键）
   views/todo_view.py        # 主视图（侧边栏、聊天面板、拖拽排序、筛选、排序）
   views/stats_view.py       # 统计页（环状图、柱状图、概览卡片、全年热力图+每日评估）
   views/calendar_view.py    # 日历页（月网格、任务圆点、年/月切换、日期任务详情）
-  views/settings_view.py    # 设置页（外观/语言/助手设置，LLM 配置表单）
+  views/settings_view.py    # 设置页（外观/语言/助手设置/通知，LLM 配置表单）
   components/task_item.py   # 卡片式任务（日期编辑器、描述、编辑/删除按钮、状态标记）
   components/date_picker.py # 自定义日历组件（自动范围、自适应时间、小时/分钟选择）
 data/tasks.db               # 本地数据库（自动创建）

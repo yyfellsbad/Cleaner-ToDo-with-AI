@@ -128,3 +128,12 @@ class TaskRecord:
         if self.repeat_mode == "each" and self.all_occurrences_done:
             self.completed = True
         return True
+
+    def unmark_occurrence(self, d: date) -> bool:
+        """取消某一天的完成标记。返回 True 如果确实移除了。"""
+        key = d.isoformat()
+        if key not in self.completed_dates:
+            return False
+        self.completed_dates.remove(key)
+        self.completed = False
+        return True

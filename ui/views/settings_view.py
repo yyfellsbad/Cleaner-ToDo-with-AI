@@ -18,10 +18,12 @@ PERSONA_PRESETS: dict[str, str] = {
 
 
 class SettingsView(ft.Column):
-    def __init__(self, theme_manager: ThemeManager, config_manager=None, on_lang_change=None):
+    def __init__(self, theme_manager: ThemeManager, config_manager=None,
+                 on_lang_change=None, notification_service=None):
         super().__init__()
         self.tm = theme_manager
         self._cfg = config_manager
+        self._notif = notification_service
         self._on_lang_change_cb = on_lang_change
         self.expand = True
         self.spacing = 0
@@ -34,6 +36,7 @@ class SettingsView(ft.Column):
             "appearance": (t("nav.appearance"), ft.Icons.PALETTE_OUTLINED),
             "language": (t("nav.language"), ft.Icons.LANGUAGE),
             "assistant": (t("nav.assistant"), ft.Icons.SMART_TOY_OUTLINED),
+            "notifications": (t("nav.notifications"), ft.Icons.NOTIFICATIONS_OUTLINED),
         }
 
         nav_controls = []
@@ -101,6 +104,8 @@ class SettingsView(ft.Column):
             return self._build_language()
         if section == "assistant":
             return self._build_assistant()
+        if section == "notifications":
+            return self._build_notifications()
         return ft.Container()
 
     def _build_appearance(self) -> ft.Control:
@@ -283,6 +288,108 @@ class SettingsView(ft.Column):
                     size=12,
                     color=AppColors.TEXT_HINT,
                 ),
+            ],
+        )
+
+    def _build_notifications(self) -> ft.Control:
+        notif = self._notif
+        if not notif:
+            return ft.Column(
+                spacing=20,
+                scroll=ft.ScrollMode.AUTO,
+                controls=[
+                    ft.Text(t("settings.notifications.title"), size=18, weight=ft.FontWeight.W_600),
+                    ft.Divider(),
+                    ft.Text(t("settings.assistant.not_loaded"), color=AppColors.TEXT_HINT),
+                ],
+            )
+
+        enable_switch = ft.Switch(
+            label=t("settings.notifications.enabled"),
+            value=notif.enabled,
+            on_change=lambda e: setattr(notif, "enabled", e.control.value),
+        )
+
+        advance_dd = ft.Dropdown(
+            label=t("settings.notifications.advance"),
+            value=str(notif.advance_min),
+            width=200,
+            dense=True,
+            options=[
+                ft.dropdown.Option("5", "5 分钟"),
+                ft.dropdown.Option("15", "15 分钟"),
+                ft.dropdown.Option("30", "30 分钟"),
+                ft.dropdown.Option("60", "1 小时"),
+            ],
+            on_select=lambda e: setattr(notif, "advance_min", int(e.control.value)),
+        )
+
+        dnd_switch = ft.Switch(
+            label=t("settings.notifications.dnd_enabled"),
+            value=notif.dnd_enabled,
+            on_change=lambda e: setattr(notif, "dnd_enabled", e.control.value),
+        )
+
+        time_options = [
+            ft.dropdown.Option(f"{h:02d}:{m:02d}")
+            for h in range(24) for m in (0, 30)
+        ]
+
+        dnd_start_dd = ft.Dropdown(
+            label=t("settings.notifications.dnd_start"),
+            value=notif.dnd_start,
+            width=120,
+            dense=True,
+            options=time_options,
+            on_select=lambda e: setattr(notif, "dnd_start", e.control.value),
+        )
+
+        dnd_end_dd = ft.Dropdown(
+            label=t("settings.notifications.dnd_end"),
+            value=notif.dnd_end,
+            width=120,
+            dense=True,
+            options=time_options,
+            on_select=lambda e: setattr(notif, "dnd_end", e.control.value),
+        )
+
+        async def _test_notif(e):
+            e.control.disabled = True
+            self.update()
+            ok = notif.send_test()
+            e.control.disabled = False
+            self.update()
+            snack = ft.SnackBar(
+                content=ft.Text(t("settings.notifications.test_ok") if ok else "Failed"),
+                bgcolor=ft.Colors.GREEN_400 if ok else ft.Colors.RED_400,
+            )
+            self.page.overlay.append(snack)
+            snack.open = True
+            self.page.update()
+
+        test_btn = ft.Button(
+            t("settings.notifications.test"),
+            icon=ft.Icons.NOTIFICATIONS_ACTIVE,
+            on_click=_test_notif,
+        )
+
+        return ft.Column(
+            spacing=20,
+            scroll=ft.ScrollMode.AUTO,
+            controls=[
+                ft.Text(t("settings.notifications.title"), size=18, weight=ft.FontWeight.W_600),
+                ft.Divider(),
+                enable_switch,
+                ft.Row([advance_dd]),
+                ft.Text(t("settings.notifications.advance_hint"), size=12, color=AppColors.TEXT_HINT),
+                ft.Divider(),
+                ft.Text(t("settings.notifications.dnd"), weight=ft.FontWeight.W_500),
+                dnd_switch,
+                ft.Row([dnd_start_dd, dnd_end_dd]),
+                ft.Divider(),
+                test_btn,
+                ft.Container(height=8),
+                ft.Text(t("settings.notifications.hint"), size=12, color=AppColors.TEXT_HINT),
             ],
         )
 
