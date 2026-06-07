@@ -984,10 +984,20 @@ class TodoApp(ft.Column):
             desc = (self._new_task_desc.value or "").strip()
             repeat_days = self._get_new_repeat_days()
             repeat_mode = self._get_new_repeat_mode()
+            
+            # 处理日期和到期时间
+            task_date = picker.range_start
+            end_date = picker.range_end
+            
+            # 如果用户只选择了一个日期但设置了时间，将这个时间作为到期时间
+            if task_date and not end_date and (task_date.hour != 0 or task_date.minute != 0):
+                end_date = task_date
+                task_date = task_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            
             task_record = self.task_service.create_task(
                 self.new_task.value,
-                task_date=picker.range_start,
-                end_date=picker.range_end,
+                task_date=task_date,
+                end_date=end_date,
                 description=desc,
                 repeat_days=repeat_days,
                 repeat_mode=repeat_mode,

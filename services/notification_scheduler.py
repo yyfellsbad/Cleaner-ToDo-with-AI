@@ -31,6 +31,15 @@ class NotificationScheduler:
         NotificationScheduler._task = asyncio.ensure_future(_loop())
 
     @staticmethod
+    def stop() -> None:
+        """停止后台通知检查循环。"""
+        if hasattr(NotificationScheduler, "_task") and not NotificationScheduler._task.done():
+            try:
+                NotificationScheduler._task.cancel()
+            except Exception:
+                pass  # 忽略取消时的异常
+
+    @staticmethod
     def _check(
         notif_svc: NotificationService,
         task_repo: TaskRepository,

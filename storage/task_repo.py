@@ -93,7 +93,7 @@ class TaskRepository:
         with transaction(self.db_path) as conn:
             for task in tasks:
                 cursor = conn.execute(
-                    f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     task.to_db_values(),
                 )
                 task.id = int(cursor.lastrowid)

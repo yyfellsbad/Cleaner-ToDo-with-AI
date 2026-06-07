@@ -121,6 +121,22 @@ class Task(ft.Column):
         done = len(self.completed_dates)
         return done, total
 
+    def _is_default_end_date(self) -> bool:
+        """判断 end_date 是否是系统默认的免打扰开始时间（用户未手动设置）"""
+        if not self.end_date:
+            return False
+        from services.notification_service import NotificationService
+        dnd_start = NotificationService.instance().dnd_start
+        try:
+            h, m = map(int, dnd_start.split(":"))
+            return (
+                self.end_date.hour == h
+                and self.end_date.minute == m
+                and self.end_date.date() == self.date.date()
+            )
+        except (ValueError, AttributeError):
+            return False
+
     def _get_date_display(self):
         today = datetime.now().date()
         start_label = self._fmt_short(self.date)
@@ -134,10 +150,14 @@ class Task(ft.Column):
             else:
                 repeat_suffix += f" · {t('repeat.once_mode')}"
 
-        if self.end_date:
+        # 如果 end_date 是默认值（免打扰开始时间），不显示到期时间
+        if self.end_date and not self._is_default_end_date():
             end_label = self._fmt_short(self.end_date)
-            if self.date.date() == self.end_date.date() and _has_time_component(self.date) and _has_time_component(self.end_date):
-                end_label = f"{self.end_date.hour:02d}:{self.end_date.minute:02d}"
+            if self.date.date() == self.end_date.date():
+                # 同一天，只显示到期时间
+                text = f"📅 {end_label}{repeat_suffix}"
+                color = AppColors.DATE_ONGOING if self.ongoing else AppColors.DATE_FUTURE
+                return text, color, 12
             text = f"📅 {start_label} ~ {end_label}{repeat_suffix}"
             color = AppColors.DATE_ONGOING if self.ongoing else AppColors.DATE_FUTURE
             return text, color, 12
@@ -434,12 +454,37 @@ class Task(ft.Column):
             ],
         )
 
+        # ── 到期时间编辑器 ──
+        self._end_time_edit = ft.Row(
+            spacing=4,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Text(t("task.end_time"), size=12, color=AppColors.TEXT_HINT),
+                ft.Dropdown(
+                    options=[ft.dropdown.Option(f"{h:02d}") for h in range(24)],
+                    value=f"{self.end_date.hour:02d}" if self.end_date else "23",
+                    width=90,
+                    text_size=13,
+                    border_radius=6,
+                ),
+                ft.Text(":", size=12),
+                ft.Dropdown(
+                    options=[ft.dropdown.Option(f"{m:02d}") for m in [0, 15, 30, 45]],
+                    value=f"{self.end_date.minute:02d}" if self.end_date else "00",
+                    width=90,
+                    text_size=13,
+                    border_radius=6,
+                ),
+            ],
+        )
+
         self.edit_view = ft.Column(
             visible=False,
             spacing=4,
             controls=[
                 self.edit_name,
                 self.edit_desc,
+                self._end_time_edit,
                 self._repeat_edit_column,
                 ft.Row(
                     alignment=ft.MainAxisAlignment.END,
@@ -463,6 +508,17 @@ class Task(ft.Column):
             self._cancel_date_edit(e)
         self.edit_name.value = self.display_task.label
         self.edit_desc.value = self.description
+        # 更新到期时间选择器显示当前值
+        hour_dd = self._end_time_edit.controls[1]
+        minute_dd = self._end_time_edit.controls[3]
+        if self.end_date:
+            hour_dd.value = f"{self.end_date.hour:02d}"
+            minute_dd.value = f"{self.end_date.minute:02d}"
+        else:
+            hour_dd.value = "23"
+            minute_dd.value = "00"
+        hour_dd.update()
+        minute_dd.update()
         # 只在有持续（end_date）时显示重复设置
         has_range = self.end_date is not None
         self._repeat_edit_column.visible = has_range
@@ -514,6 +570,15 @@ class Task(ft.Column):
     def save_clicked(self, e):
         self.task_name = self.edit_name.value
         self.description = self.edit_desc.value or ""
+        # 保存到期时间 - 无论之前是否有到期时间，都保存用户编辑的值
+        if self._end_time_edit.visible:
+            hour = int(self._end_time_edit.controls[1].value)
+            minute = int(self._end_time_edit.controls[3].value)
+            if self.end_date:
+                self.end_date = self.end_date.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            elif self.date:
+                # 如果之前没有到期时间，基于任务日期创建
+                self.end_date = self.date.replace(hour=hour, minute=minute, second=0, microsecond=0)
         self.repeat_days = self._get_edit_repeat_days()
         self.repeat_mode = "each"
         self._desc_text.value = self.description
@@ -524,9 +589,11 @@ class Task(ft.Column):
         self._desc_expanded = False
         self._desc_text.max_lines = 1
         self._refresh_date_display()
+        self._refresh_progress_bar()
         self.display_view.visible = True
         self.edit_view.visible = False
         self.app.save_task(self)
+        self.update()
 
     # ── 状态变更 ──
 
@@ -548,7 +615,9 @@ class Task(ft.Column):
             await asyncio.sleep(0.3)
         self._refresh_card_style()
         self._refresh_date_display()
+        self._refresh_progress_bar()
         self.app.save_task(self)
+        self.update()
 
     def delete_clicked(self, e):
         self.task_delete(self)
@@ -581,12 +650,19 @@ class Task(ft.Column):
         parsed_end = self._custom_picker.range_end
 
         self.date = parsed_start
-        self.end_date = parsed_end
+        # 只有当用户明确选择了结束日期时才更新，否则保留原来的结束日期
+        if parsed_end:
+            self.end_date = parsed_end
+        # 如果之前没有结束日期，使用默认值
+        elif not self.end_date:
+            from services.task_service import _default_end_date
+            self.end_date = _default_end_date(self.date)
         # 持续消失时清除重复设置
         if not parsed_end:
             self.repeat_days = 0
             self.repeat_mode = "once"
         self._refresh_date_display()
+        self._refresh_progress_bar()
         self._date_display_text.visible = True
         self._date_editor_row.visible = False
         self.app.save_task(self)
@@ -602,6 +678,70 @@ class Task(ft.Column):
         self._date_display_text.content.content.value = text
         self._date_display_text.content.content.color = color
         self._date_display_text.content.content.size = size
+
+    def _refresh_progress_bar(self):
+        """刷新进度条的状态。"""
+        # 找到日期区域（第一个 tight Column）
+        content_col = self.display_view.content.content
+        if not hasattr(content_col, 'controls'):
+            return
+        date_area = None
+        for ctrl in content_col.controls:
+            if isinstance(ctrl, ft.Column) and ctrl.tight:
+                date_area = ctrl
+                break
+        
+        if not date_area:
+            return
+        
+        # 如果需要进度条但没有
+        if self.end_date and not self.completed:
+            now = datetime.now()
+            total_seconds = (self.end_date - self.date).total_seconds()
+            if total_seconds > 0:
+                elapsed_seconds = (now - self.date).total_seconds()
+                progress = max(0.0, min(1.0, elapsed_seconds / total_seconds))
+                
+                # 确定进度条颜色
+                if progress >= 0.9:
+                    progress_color = ft.Colors.ERROR
+                elif progress >= 0.75:
+                    progress_color = ft.Colors.DEEP_ORANGE
+                elif progress >= 0.6:
+                    progress_color = ft.Colors.ORANGE
+                elif progress >= 0.45:
+                    progress_color = ft.Colors.AMBER
+                elif progress >= 0.3:
+                    progress_color = ft.Colors.TEAL
+                else:
+                    progress_color = ft.Colors.PRIMARY
+                
+                # 如果已有进度条，更新其值和颜色
+                if self._progress_bar:
+                    self._progress_bar.value = progress
+                    self._progress_bar.color = progress_color
+                    self._progress_bar.update()
+                else:
+                    # 创建新进度条
+                    self._progress_bar = ft.ProgressBar(
+                        value=progress,
+                        height=3,
+                        border_radius=2,
+                        color=progress_color,
+                        bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.ON_SURFACE),
+                    )
+                    date_area.controls.append(ft.Container(
+                        padding=ft.Padding(0, 4, 0, 0),
+                        content=self._progress_bar,
+                    ))
+        else:
+            # 不需要进度条，移除它
+            if self._progress_bar:
+                for i, ctrl in enumerate(date_area.controls):
+                    if isinstance(ctrl, ft.Container) and ctrl.content == self._progress_bar:
+                        date_area.controls.pop(i)
+                        self._progress_bar = None
+                        break
 
     def _refresh_card_style(self):
         card = self.display_view.content

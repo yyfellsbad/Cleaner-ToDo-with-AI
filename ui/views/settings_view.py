@@ -383,6 +383,15 @@ class SettingsView(ft.Column):
             on_select=lambda e: setattr(notif, "dnd_end", e.control.value),
         )
 
+        default_end_time_dd = ft.Dropdown(
+            label=t("settings.notifications.default_end_time"),
+            value=notif.default_end_time,
+            width=120,
+            dense=True,
+            options=time_options,
+            on_select=lambda e: setattr(notif, "default_end_time", e.control.value),
+        )
+
         async def _test_notif(e):
             e.control.disabled = True
             self.update()
@@ -416,6 +425,9 @@ class SettingsView(ft.Column):
                 ft.Text(t("settings.notifications.dnd"), weight=ft.FontWeight.W_500),
                 dnd_switch,
                 ft.Row([dnd_start_dd, dnd_end_dd]),
+                ft.Divider(),
+                ft.Text(t("settings.notifications.default_end_time_label"), weight=ft.FontWeight.W_500),
+                ft.Row([default_end_time_dd]),
                 ft.Divider(),
                 test_btn,
                 ft.Container(height=8),

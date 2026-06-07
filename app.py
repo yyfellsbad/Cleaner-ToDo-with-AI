@@ -1,4 +1,6 @@
 from pathlib import Path
+import asyncio
+import logging
 
 import flet as ft
 
@@ -13,6 +15,9 @@ from ui.views.onboarding_view import OnboardingView
 from ui.views.todo_view import TodoApp
 
 ROOT_DIR = Path(__file__).resolve().parent
+
+# 抑制 asyncio 在 Windows 上关闭时的 ConnectionResetError
+logging.getLogger("asyncio").setLevel(logging.ERROR)
 
 
 def _get_screens():
@@ -125,6 +130,11 @@ def main(page: ft.Page):
             repo.set("win.full_screen", "1")
         elif e.type == ft.WindowEventType.LEAVE_FULL_SCREEN:
             repo.set("win.full_screen", "0")
+        elif e.type == ft.WindowEventType.CLOSE:
+            try:
+                NotificationScheduler.stop()
+            except Exception:
+                pass  # 忽略停止时的异常
 
     page.window.on_event = _on_window_event
 

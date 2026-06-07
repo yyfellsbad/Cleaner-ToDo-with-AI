@@ -1384,7 +1384,7 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 
 ## 48. 任务卡片操作按钮间距调整
 
-**问题：** 任务卡片右侧的删除按钮与 ReorderableListView 的排序手柄（≡）靠得太近，容易误触。
+**问题：** 任务卡片右侧的删除按钮与 ReorderableListView 的排序手柄（≡）靠得太近，不美观且容易误触。
 
 **修复（task_item.py）：**
 - 操作按钮行间距从 `spacing=0` 增加到 `spacing=8`
@@ -1397,3 +1397,43 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | 文件 | 变更类型 |
 |---|---|
 | `ui/components/task_item.py` | 操作按钮间距调整（0→8）+ 删除按钮后添加空白间距 |
+
+---
+
+## 49. 到期时间功能优化
+
+**功能描述：** 优化到期时间设置，支持在编辑任务时修改到期时间，同时在设置中可配置默认到期时间。
+
+**实现：**
+
+### A. 任务编辑组件（task_item.py）
+- 在编辑视图中添加到期时间选择器（小时/分钟下拉框）
+- 更新 `save_clicked` 方法保存到期时间修改
+
+### B. 默认到期时间配置（notification_service.py）
+- 新增 `default_end_time` 属性，支持在设置中配置
+- 默认值为免打扰开始时间，确保通知在免打扰时段前送达
+
+### C. 设置页面（settings_view.py）
+- 在通知设置区域添加默认到期时间控件
+- 自动保存配置到设置文件
+
+### D. 任务服务（task_service.py）
+- 创建任务时自动使用默认到期时间（如果用户未设置）
+- 更新任务时支持清除到期时间并恢复默认值
+
+### E. 隐藏默认到期时间（task_item.py）
+- 新增 `_is_default_end_date()` 方法判断是否为默认值
+- 如果到期时间是默认值，任务卡片上不显示，减少视觉干扰
+
+---
+
+## 修改文件清单（2026-06-07 到期时间优化）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/task_item.py` | 添加到期时间编辑器，隐藏默认到期时间显示 |
+| `services/notification_service.py` | 新增 `default_end_time` 属性 |
+| `services/task_service.py` | 默认到期时间逻辑实现 |
+| `ui/views/settings_view.py` | 添加默认到期时间配置控件 |
+| `ui/i18n.py` | 新增相关翻译字符串 |

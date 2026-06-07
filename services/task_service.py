@@ -24,6 +24,17 @@ def _try_parse_time(value: str) -> tuple[int, int] | None:
     return None
 
 
+def _default_end_date(task_date: datetime) -> datetime:
+    """返回默认的到期时间：当天默认到期时间设置。"""
+    from services.notification_service import NotificationService
+    default_end_time = NotificationService.instance().default_end_time
+    try:
+        h, m = map(int, default_end_time.split(":"))
+        return task_date.replace(hour=h, minute=m, second=0, microsecond=0)
+    except (ValueError, AttributeError):
+        return task_date.replace(hour=23, minute=0, second=0, microsecond=0)
+
+
 def _extract_time(text: str) -> tuple[str, tuple[int, int] | None]:
     """从文本中提取时间部分，返回 (剩余文本, (hour, minute) | None)。"""
     # 匹配 "14:30"、"9:00" 等
@@ -83,9 +94,16 @@ class TaskService:
         if not normalized_name:
             raise ValueError("Task name cannot be empty")
 
+        task_date = task_date or datetime.now().replace(second=0, microsecond=0)
+        # task_date 只保留日期部分，时间信息在 end_date 中
+        task_date = task_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        # 如果没有设置到期时间，默认设为当天免打扰开始时间
+        if end_date is None:
+            end_date = _default_end_date(task_date)
+
         record = TaskRecord(
             name=normalized_name,
-            date=task_date or datetime.now().replace(second=0, microsecond=0),
+            date=task_date,
             end_date=end_date,
             description=description.strip(),
             completed=completed,
@@ -113,10 +131,17 @@ class TaskService:
             return [self.create_task(normalized_name, task_date, end_date=end_date, description=description,
                                      repeat_days=repeat_days, repeat_mode=repeat_mode)]
 
+        task_date = task_date or datetime.now().replace(second=0, microsecond=0)
+        # task_date 只保留日期部分，时间信息在 end_date 中
+        task_date = task_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        # 如果没有设置到期时间，默认设为当天免打扰开始时间
+        if end_date is None:
+            end_date = _default_end_date(task_date)
+
         tasks = [
             TaskRecord(
                 name=f"{normalized_name} #{index}",
-                date=task_date or datetime.now().replace(second=0, microsecond=0),
+                date=task_date,
                 end_date=end_date,
                 description=description,
                 repeat_days=repeat_days,
@@ -146,9 +171,11 @@ class TaskService:
         if name is not None:
             task.name = name.strip() or task.name
         if task_date is not None:
-            task.date = task_date
+            # task_date 只保留日期部分，时间信息在 end_date 中
+            task.date = task_date.replace(hour=0, minute=0, second=0, microsecond=0)
         if clear_end_date:
-            task.end_date = None
+            # 清除后重新设置为默认值
+            task.end_date = _default_end_date(task.date)
         elif end_date is not None:
             task.end_date = end_date
         if description is not None:

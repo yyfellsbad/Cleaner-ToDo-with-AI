@@ -162,6 +162,9 @@ MESSAGES: dict[str, dict[str, str]] = {
     "task.repeat": {"zh": "重复", "en": "Repeat"},
     "task.repeat_days_unit": {"zh": "天", "en": "days"},
     "task.repeat_mode_label": {"zh": "模式", "en": "Mode"},
+    "task.end_time": {"zh": "到期时间", "en": "End Time"},
+    "task.remind_time": {"zh": "定时提醒", "en": "Scheduled Reminder"},
+    "task.remind_time_label": {"zh": "提醒时间", "en": "Remind at"},
 
     # ── Date picker ────────────────────────────────────────
     "picker.weekdays": {"zh": "一二三四五六日", "en": "MTWTFSS"},
@@ -231,6 +234,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "settings.notifications.dnd_enabled": {"zh": "启用免打扰时段", "en": "Enable DND Period"},
     "settings.notifications.dnd_start": {"zh": "开始时间", "en": "Start Time"},
     "settings.notifications.dnd_end": {"zh": "结束时间", "en": "End Time"},
+    "settings.notifications.default_end_time": {"zh": "默认到期时间", "en": "Default End Time"},
+    "settings.notifications.default_end_time_label": {"zh": "默认到期时间", "en": "Default End Time"},
     "settings.notifications.test": {"zh": "发送测试通知", "en": "Send Test Notification"},
     "settings.notifications.test_ok": {"zh": "测试通知已发送", "en": "Test notification sent"},
     "settings.notifications.hint": {"zh": "通知将在任务到期、需要打卡时弹出系统通知。", "en": "System notifications for task deadlines and check-ins."},
@@ -244,6 +249,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "notif.body.ongoing": {"zh": "任务进行中：{}", "en": "Ongoing: {}"},
     "notif.body.expiring": {"zh": "即将到期：{}", "en": "Expiring soon: {}"},
     "notif.body.expired": {"zh": "已过期：{}", "en": "Expired: {}"},
+    "notif.scheduled": {"zh": "定时提醒", "en": "Reminder"},
+    "notif.body.scheduled": {"zh": "提醒您：{}", "en": "Reminder: {}"},
 
     # ── Toast notifications ─────────────────────────────────
     "toast.task_added": {"zh": "已添加任务：{}", "en": "Task added: {}"},

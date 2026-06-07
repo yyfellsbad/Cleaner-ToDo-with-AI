@@ -26,6 +26,7 @@ class NotificationService:
         self._dnd_enabled = False
         self._dnd_start = "23:00"
         self._dnd_end = "08:00"
+        self._default_end_time = "23:00"
         self._sent_tags: set[str] = set()
         self._last_clear_date: date | None = None
 
@@ -38,6 +39,8 @@ class NotificationService:
         self._dnd_enabled = repo.get("notif.dnd_enabled", "0") == "1"
         self._dnd_start = repo.get("notif.dnd_start", "23:00")
         self._dnd_end = repo.get("notif.dnd_end", "08:00")
+        # 默认到期时间，默认使用免打扰开始时间
+        self._default_end_time = repo.get("notif.default_end_time", self._dnd_start)
 
     def _save(self, key: str, value: str) -> None:
         if self._repo:
@@ -89,6 +92,15 @@ class NotificationService:
     def dnd_end(self, v: str) -> None:
         self._dnd_end = v
         self._save("notif.dnd_end", v)
+
+    @property
+    def default_end_time(self) -> str:
+        return self._default_end_time
+
+    @default_end_time.setter
+    def default_end_time(self, v: str) -> None:
+        self._default_end_time = v
+        self._save("notif.default_end_time", v)
 
     # ── DND check ────────────────────────────────────────────
 
