@@ -1384,7 +1384,7 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 
 ## 48. 任务卡片操作按钮间距调整
 
-**问题：** 任务卡片右侧的删除按钮与 ReorderableListView 的排序手柄（≡）靠得太近，不美观且容易误触。
+**问题：** 任务卡片右侧的删除按钮与 ReorderableListView 的排序手柄（≡）靠得太近，容易误触。
 
 **修复（task_item.py）：**
 - 操作按钮行间距从 `spacing=0` 增加到 `spacing=8`
@@ -1397,57 +1397,3 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | 文件 | 变更类型 |
 |---|---|
 | `ui/components/task_item.py` | 操作按钮间距调整（0→8）+ 删除按钮后添加空白间距 |
-
----
-
-## 49. 定时提醒功能
-
-**功能描述：** 为每个任务添加独立的定时提醒功能，用户可以设置具体的提醒时间，系统会在指定时间发送系统通知。
-
-**实现：**
-
-### A. 任务模型（task.py）
-- 新增 `remind_time` 字段（"HH:MM" 格式）
-- 更新 `from_row` 和 `to_db_values` 方法支持新字段
-
-### B. 任务仓库（task_repo.py）
-- 更新 `_COLUMNS` 和 `_INSERT_COLS` 包含 `remind_time`
-- 更新 INSERT 和 UPDATE SQL 语句
-
-### C. 数据库迁移（db.py）
-- 新增 `remind_time` 列（TEXT 类型，默认空字符串）
-
-### D. 任务服务（task_service.py）
-- `create_task`、`create_tasks`、`update_task` 方法新增 `remind_time` 参数
-
-### E. 任务编辑组件（task_item.py）
-- 添加提醒时间开关和时间选择器（小时/分钟下拉框）
-- 添加 `_on_remind_time_switch`、`_get_remind_time`、`_set_remind_time` 方法
-- 在编辑界面显示提醒时间设置区域
-
-### F. 通知调度器（notification_scheduler.py）
-- 新增任务级别定时提醒检查逻辑
-- 每分钟检查一次，在设置的提醒时间前后1分钟内发送通知
-
-### G. 国际化（i18n.py）
-- 新增 `task.remind_time`、`task.remind_time_label` 翻译
-- 新增 `notif.scheduled`、`notif.body.scheduled` 翻译
-
-### H. 主视图（todo_view.py）
-- `load_tasks` 时加载 `remind_time` 字段
-- `save_task` 时保存 `remind_time` 字段
-
----
-
-## 修改文件清单（2026-06-07 定时提醒）
-
-| 文件 | 变更类型 |
-|---|---|
-| `core/models/task.py` | 新增 `remind_time` 字段 |
-| `storage/task_repo.py` | 更新数据库列和 SQL 语句 |
-| `storage/db.py` | 新增数据库迁移 |
-| `services/task_service.py` | 新增 `remind_time` 参数支持 |
-| `services/notification_scheduler.py` | 新增定时提醒检查逻辑 |
-| `ui/components/task_item.py` | 添加提醒时间选择器 UI |
-| `ui/views/todo_view.py` | 加载和保存 `remind_time` |
-| `ui/i18n.py` | 新增相关翻译 |

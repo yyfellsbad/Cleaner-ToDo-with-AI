@@ -41,8 +41,6 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE tasks ADD COLUMN repeat_mode TEXT DEFAULT 'once'")
     if "completed_dates" not in columns:
         connection.execute("ALTER TABLE tasks ADD COLUMN completed_dates TEXT DEFAULT '[]'")
-    if "remind_time" not in columns:
-        connection.execute("ALTER TABLE tasks ADD COLUMN remind_time TEXT DEFAULT ''")
     connection.commit()
 
 

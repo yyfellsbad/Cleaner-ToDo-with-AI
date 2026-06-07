@@ -78,7 +78,6 @@ class TaskService:
         description: str = "",
         repeat_days: int = 0,
         repeat_mode: str = "once",
-        remind_time: str = "",
     ) -> TaskRecord:
         normalized_name = name.strip()
         if not normalized_name:
@@ -92,7 +91,6 @@ class TaskService:
             completed=completed,
             repeat_days=repeat_days,
             repeat_mode=repeat_mode,
-            remind_time=remind_time,
         )
         return self.repository.create_task(record)
 
@@ -105,7 +103,6 @@ class TaskService:
         description: str = "",
         repeat_days: int = 0,
         repeat_mode: str = "once",
-        remind_time: str = "",
     ) -> list[TaskRecord]:
         normalized_name = base_name.strip()
         if not normalized_name:
@@ -114,7 +111,7 @@ class TaskService:
         normalized_count = max(1, int(count))
         if normalized_count == 1:
             return [self.create_task(normalized_name, task_date, end_date=end_date, description=description,
-                                     repeat_days=repeat_days, repeat_mode=repeat_mode, remind_time=remind_time)]
+                                     repeat_days=repeat_days, repeat_mode=repeat_mode)]
 
         tasks = [
             TaskRecord(
@@ -124,7 +121,6 @@ class TaskService:
                 description=description,
                 repeat_days=repeat_days,
                 repeat_mode=repeat_mode,
-                remind_time=remind_time,
             )
             for index in range(1, normalized_count + 1)
         ]
@@ -142,7 +138,6 @@ class TaskService:
         repeat_days: int | None = None,
         repeat_mode: str | None = None,
         completed_dates: list[str] | None = None,
-        remind_time: str | None = None,
     ) -> TaskRecord:
         task = self.repository.get_task(task_id)
         if task is None:
@@ -166,8 +161,6 @@ class TaskService:
             task.repeat_mode = repeat_mode
         if completed_dates is not None:
             task.completed_dates = completed_dates
-        if remind_time is not None:
-            task.remind_time = remind_time
         return self.repository.update_task(task)
 
     def delete_task(self, task_id: int) -> None:
