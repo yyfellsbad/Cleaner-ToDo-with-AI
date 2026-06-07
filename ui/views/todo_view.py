@@ -138,6 +138,9 @@ class TodoApp(ft.Column):
                 completed_dates=task.completed_dates,
             )
         task.task_id = saved.id
+        # 修改时间后触发重新排序
+        self._needs_resort = True
+        self.update()  # 触发 before_update 执行排序
 
     def delete_task(self, task):
         if task.task_id:
@@ -1187,6 +1190,10 @@ class TodoApp(ft.Column):
         self._needs_resort = False
         self._sync_filter_highlight()
         self._apply_sort()
+        # 刷新所有任务的进度条
+        for task in self.tasks.controls:
+            if hasattr(task, '_refresh_progress_bar') and hasattr(task, 'display_view'):
+                task._refresh_progress_bar()
         status = self._current_filter
         count = 0
         expired_count = 0
@@ -1218,10 +1225,12 @@ class TodoApp(ft.Column):
 
         def sort_key(task):
             if mode == "urgency_asc":
-                deadline = (task.end_date or task.date).date()
-                days_left = (deadline - today).days
+                deadline = task.end_date or task.date
+                days_left = (deadline.date() - today).days
                 completed_offset = 10000 if task.completed else 0
-                return (days_left + completed_offset, task.task_id or 0)
+                # 加上到期时间的比较，同一天的任务按时间排序
+                time_offset = deadline.hour * 60 + deadline.minute
+                return (days_left + completed_offset, time_offset, task.task_id or 0)
             if mode == "date_asc":
                 return (task.date, task.task_id or 0)
             if mode == "date_desc":
@@ -1237,10 +1246,11 @@ class TodoApp(ft.Column):
                 dur = (task.end_date - task.date).days if task.end_date else 0
                 return (-dur, -(task.task_id or 0))
             # fallback = urgency
-            deadline = (task.end_date or task.date).date()
-            days_left = (deadline - today).days
+            deadline = task.end_date or task.date
+            days_left = (deadline.date() - today).days
             completed_offset = 10000 if task.completed else 0
-            return (days_left + completed_offset, task.task_id or 0)
+            time_offset = deadline.hour * 60 + deadline.minute
+            return (days_left + completed_offset, time_offset, task.task_id or 0)
 
         controls.sort(key=sort_key)
 

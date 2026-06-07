@@ -589,10 +589,10 @@ class Task(ft.Column):
         self._desc_expanded = False
         self._desc_text.max_lines = 1
         self._refresh_date_display()
-        self._refresh_progress_bar()
+        # 先保存任务，再更新显示视图
+        self.app.save_task(self)
         self.display_view.visible = True
         self.edit_view.visible = False
-        self.app.save_task(self)
         self.update()
 
     # ── 状态变更 ──
@@ -678,6 +678,8 @@ class Task(ft.Column):
         self._date_display_text.content.content.value = text
         self._date_display_text.content.content.color = color
         self._date_display_text.content.content.size = size
+        # 同时刷新进度条
+        self._refresh_progress_bar()
 
     def _refresh_progress_bar(self):
         """刷新进度条的状态。"""
@@ -697,9 +699,11 @@ class Task(ft.Column):
         # 如果需要进度条但没有
         if self.end_date and not self.completed:
             now = datetime.now()
-            total_seconds = (self.end_date - self.date).total_seconds()
+            # 确保 date 只有日期部分
+            base_date = self.date.replace(hour=0, minute=0, second=0, microsecond=0)
+            total_seconds = (self.end_date - base_date).total_seconds()
             if total_seconds > 0:
-                elapsed_seconds = (now - self.date).total_seconds()
+                elapsed_seconds = (now - base_date).total_seconds()
                 progress = max(0.0, min(1.0, elapsed_seconds / total_seconds))
                 
                 # 确定进度条颜色
@@ -734,6 +738,8 @@ class Task(ft.Column):
                         padding=ft.Padding(0, 4, 0, 0),
                         content=self._progress_bar,
                     ))
+                    date_area.update()  # 强制刷新日期区域
+                    self.update()  # 强制刷新整个组件
         else:
             # 不需要进度条，移除它
             if self._progress_bar:

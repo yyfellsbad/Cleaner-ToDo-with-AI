@@ -1437,3 +1437,37 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `services/task_service.py` | 默认到期时间逻辑实现 |
 | `ui/views/settings_view.py` | 添加默认到期时间配置控件 |
 | `ui/i18n.py` | 新增相关翻译字符串 |
+
+---
+
+## 50. 排序功能优化
+
+**功能描述：** 优化任务排序逻辑，支持按到期时间排序，并在修改任务后自动重新排序。
+
+**实现：**
+
+### A. 紧迫程度排序优化（todo_view.py）
+- 在 `_apply_sort()` 方法的 `urgency_asc` 模式中添加到期时间比较
+- 同一天的任务按时间排序（时间越早越靠前）
+- 排序键改为 `(days_left + completed_offset, time_offset, task_id)`
+
+### B. 修改时间后自动排序（todo_view.py）
+- 在 `save_task()` 方法中设置 `_needs_resort = True` 并调用 `update()`
+- 触发 `before_update()` 执行重新排序
+
+### C. 排序后刷新进度条（todo_view.py）
+- 在 `before_update()` 方法中，排序后遍历所有任务调用 `_refresh_progress_bar()`
+- 确保进度条根据新的排序结果正确显示
+
+### D. 进度条刷新优化（task_item.py）
+- 修复进度计算逻辑，使用只包含日期部分的 `base_date` 计算进度
+- 添加强制刷新确保 UI 更新
+
+---
+
+## 修改文件清单（2026-06-07 排序优化）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/todo_view.py` | 紧迫程度排序增加时间比较，修改后自动排序，排序后刷新进度条 |
+| `ui/components/task_item.py` | 进度条计算逻辑修复，强制刷新 UI |
