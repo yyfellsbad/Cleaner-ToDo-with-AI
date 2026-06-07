@@ -61,6 +61,7 @@ class TodoApp(ft.Column):
                 record.repeat_mode,
                 record.completed_dates,
             )
+            task.remind_time = getattr(record, 'remind_time', '')
             task.key = str(record.id) if record.id else str(id(task))
             self.tasks.controls.append(task)
 
@@ -123,6 +124,7 @@ class TodoApp(ft.Column):
                 task.completed,
                 end_date=task.end_date,
                 description=task.description,
+                remind_time=getattr(task, 'remind_time', ''),
             )
         else:
             saved = self.task_service.update_task(
@@ -136,6 +138,7 @@ class TodoApp(ft.Column):
                 repeat_days=task.repeat_days,
                 repeat_mode=task.repeat_mode,
                 completed_dates=task.completed_dates,
+                remind_time=getattr(task, 'remind_time', ''),
             )
         task.task_id = saved.id
 

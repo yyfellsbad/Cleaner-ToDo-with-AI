@@ -43,6 +43,7 @@ class Task(ft.Column):
         self.repeat_days = repeat_days
         self.repeat_mode = repeat_mode
         self.completed_dates = completed_dates or []
+        self.remind_time = ""  # 定时提醒时间 "HH:MM"
         self._is_new = False  # 标记是否为新添加的任务（入场动画用）
 
     @property
@@ -434,23 +435,80 @@ class Task(ft.Column):
             ],
         )
 
-        self.edit_view = ft.Column(
+        # ── 提醒时间选择器 ──
+        self._remind_time_switch = ft.Switch(
+            label=t("task.remind_time"),
+            value=False,
+            on_change=self._on_remind_time_switch,
+            scale=0.85,  # 缩小开关尺寸
+        )
+        self._remind_time_hh = ft.Dropdown(
+            value="09",
+            width=90,  # 增大宽度确保时间可见
+            text_size=14,  # 增大字体
+            dense=False,  # 正常模式确保字体清晰
+            options=[ft.dropdown.Option(f"{h:02d}") for h in range(24)],
+            disabled=True,
+        )
+        self._remind_time_mm = ft.Dropdown(
+            value="00",
+            width=90,  # 增大宽度确保时间可见
+            text_size=14,  # 增大字体
+            dense=False,  # 正常模式确保字体清晰
+            options=[ft.dropdown.Option(f"{m:02d}") for m in (0, 15, 30, 45)],
+            disabled=True,
+        )
+        # 提醒控制区域：开关一行，时间+按钮一行
+        # 时间选择器行（单独保存引用用于控制可见性）
+        self._remind_time_row = ft.Row(
             visible=False,
             spacing=4,
             controls=[
-                self.edit_name,
-                self.edit_desc,
-                self._repeat_edit_column,
+                ft.Text(t("task.remind_time_label"), size=12, color=AppColors.TEXT_HINT, width=55),
+                self._remind_time_hh,
+                ft.Text(":", size=14, color=AppColors.TEXT_HINT),
+                self._remind_time_mm,
+            ],
+        )
+        self._remind_action_row = ft.Column(
+            spacing=4,
+            controls=[
+                # 第一行：定时提醒开关
                 ft.Row(
-                    alignment=ft.MainAxisAlignment.END,
                     controls=[
+                        self._remind_time_switch,
+                    ],
+                ),
+                # 第二行：时间选择器 + 确认按钮
+                ft.Row(
+                    spacing=8,
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        self._remind_time_row,
                         ft.IconButton(
                             icon=ft.Icons.CHECK_CIRCLE_OUTLINE,
                             icon_color=AppColors.EDIT_CONFIRM_ICON,
                             tooltip=t("task.confirm"),
                             on_click=self.save_clicked,
+                            icon_size=18,
                         ),
                     ],
+                ),
+            ],
+        )
+
+        self.edit_view = ft.Column(
+            visible=False,
+            spacing=6,  # 增加列间距
+            controls=[
+                self.edit_name,
+                self.edit_desc,
+                self._repeat_edit_column,
+                # 给提醒控制行添加上下间距
+                ft.Container(
+                    content=self._remind_action_row,
+                    padding=ft.Padding(0, 6, 0, 6),  # 上下各6px间距
                 ),
             ],
         )
@@ -481,6 +539,8 @@ class Task(ft.Column):
         if is_custom:
             self._edit_custom_row.visible = True
             self._edit_custom_days.value = str(self.repeat_days)
+        # 初始化提醒时间
+        self._set_remind_time(self.remind_time)
         self.display_view.visible = False
         self.edit_view.visible = True
         self.update()
@@ -500,6 +560,48 @@ class Task(ft.Column):
     def _on_custom_days_change(self, e):
         pass
 
+    def _on_remind_time_switch(self, e):
+        enabled = e.control.value
+        self._remind_time_row.visible = enabled
+        self._remind_time_hh.disabled = not enabled
+        self._remind_time_mm.disabled = not enabled
+        # 单独更新每个组件确保状态生效
+        self._remind_time_row.update()
+        self._remind_time_hh.update()
+        self._remind_time_mm.update()
+        self.update()
+
+    def _get_remind_time(self) -> str:
+        if not self._remind_time_switch.value:
+            return ""
+        hh = self._remind_time_hh.value or "00"
+        mm = self._remind_time_mm.value or "00"
+        return f"{hh}:{mm}"
+
+    def _set_remind_time(self, time_str: str):
+        if time_str:
+            parts = time_str.split(":")
+            if len(parts) == 2:
+                self._remind_time_hh.value = parts[0]
+                self._remind_time_mm.value = parts[1]
+                self._remind_time_switch.value = True
+                self._remind_time_row.visible = True
+                self._remind_time_hh.disabled = False
+                self._remind_time_mm.disabled = False
+                # 单独更新每个组件确保状态生效
+                self._remind_time_hh.update()
+                self._remind_time_mm.update()
+            else:
+                self._remind_time_switch.value = False
+                self._remind_time_row.visible = False
+                self._remind_time_hh.disabled = True
+                self._remind_time_mm.disabled = True
+        else:
+            self._remind_time_switch.value = False
+            self._remind_time_row.visible = False
+            self._remind_time_hh.disabled = True
+            self._remind_time_mm.disabled = True
+
     def _get_edit_repeat_days(self) -> int:
         for chip in self._edit_freq_chips.controls:
             if chip.selected and chip.data > 0:
@@ -516,6 +618,7 @@ class Task(ft.Column):
         self.description = self.edit_desc.value or ""
         self.repeat_days = self._get_edit_repeat_days()
         self.repeat_mode = "each"
+        self.remind_time = self._get_remind_time()
         self._desc_text.value = self.description
         self._desc_text.visible = bool(self.description)
         self._desc_display.mouse_cursor = (

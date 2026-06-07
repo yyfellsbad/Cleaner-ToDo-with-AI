@@ -6,8 +6,8 @@ from typing import Iterable
 from core.models.task import TaskRecord
 from storage.db import get_connection, transaction
 
-_COLUMNS = "id, name, date, end_date, description, completed, repeat_days, repeat_mode, completed_dates"
-_INSERT_COLS = "name, date, end_date, description, completed, repeat_days, repeat_mode, completed_dates"
+_COLUMNS = "id, name, date, end_date, description, completed, repeat_days, repeat_mode, completed_dates, remind_time"
+_INSERT_COLS = "name, date, end_date, description, completed, repeat_days, repeat_mode, completed_dates, remind_time"
 
 
 class TaskRepository:
@@ -51,7 +51,7 @@ class TaskRepository:
     def create_task(self, task: TaskRecord) -> TaskRecord:
         with transaction(self.db_path) as conn:
             cursor = conn.execute(
-                f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 task.to_db_values(),
             )
             task.id = int(cursor.lastrowid)
@@ -63,7 +63,7 @@ class TaskRepository:
 
         with transaction(self.db_path) as conn:
             conn.execute(
-                f"UPDATE tasks SET name=?, date=?, end_date=?, description=?, completed=?, repeat_days=?, repeat_mode=?, completed_dates=? WHERE id=?",
+                f"UPDATE tasks SET name=?, date=?, end_date=?, description=?, completed=?, repeat_days=?, repeat_mode=?, completed_dates=?, remind_time=? WHERE id=?",
                 (*task.to_db_values(), task.id),
             )
             return task
@@ -93,7 +93,7 @@ class TaskRepository:
         with transaction(self.db_path) as conn:
             for task in tasks:
                 cursor = conn.execute(
-                    f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    f"INSERT INTO tasks ({_INSERT_COLS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     task.to_db_values(),
                 )
                 task.id = int(cursor.lastrowid)

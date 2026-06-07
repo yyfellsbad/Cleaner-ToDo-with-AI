@@ -60,6 +60,24 @@ class NotificationScheduler:
 
         tid = task.id
 
+        # ── 任务级别定时提醒 ──
+        if task.remind_time:
+            try:
+                hh, mm = map(int, task.remind_time.split(":"))
+                remind_dt = datetime(today.year, today.month, today.day, hh, mm)
+                time_diff = abs((now - remind_dt).total_seconds())
+                # 检查是否在提醒时间前后1分钟内
+                if time_diff <= 60:
+                    tag = f"task_{tid}_{today.isoformat()}_scheduled"
+                    notif_svc.send(
+                        t("notif.scheduled"),
+                        t("notif.body.scheduled", task.name),
+                        tag,
+                    )
+                    return
+            except ValueError:
+                pass
+
         # ── 重复任务（each 模式）：今日需打卡 ──
         if task.is_recurring and task.repeat_mode == "each":
             if task.repeat_days <= 0 or not task.end_date:

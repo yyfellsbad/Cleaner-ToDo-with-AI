@@ -31,6 +31,7 @@ class TaskRecord:
     repeat_days: int = 0
     repeat_mode: str = "once"  # "once" | "each"
     completed_dates: list[str] = field(default_factory=list)  # ["2026-06-01", ...]
+    remind_time: str = ""  # "HH:MM" 格式，任务级别的定时提醒时间
 
     @classmethod
     def from_row(cls, row: Any) -> "TaskRecord":
@@ -49,6 +50,7 @@ class TaskRecord:
         repeat_days_val = _get("repeat_days", _get(6, 0)) or 0
         repeat_mode_val = _get("repeat_mode", _get(7, "once")) or "once"
         completed_dates_raw = _get("completed_dates", _get(8, "[]")) or "[]"
+        remind_time_val = _get("remind_time", _get(9, "")) or ""
 
         # completed_dates 解析
         if isinstance(completed_dates_raw, str):
@@ -71,9 +73,10 @@ class TaskRecord:
             repeat_days=int(repeat_days_val),
             repeat_mode=str(repeat_mode_val),
             completed_dates=[str(d) for d in cd_list],
+            remind_time=str(remind_time_val or ""),
         )
 
-    def to_db_values(self) -> tuple[str, str, str | None, str, int, int, str, str]:
+    def to_db_values(self) -> tuple[str, str, str | None, str, int, int, str, str, str]:
         return (
             self.name,
             _fmt_db(self.date),
@@ -83,6 +86,7 @@ class TaskRecord:
             self.repeat_days,
             self.repeat_mode,
             json.dumps(self.completed_dates, ensure_ascii=False),
+            self.remind_time,
         )
 
     # ── repeat helpers ─────────────────────────────────────

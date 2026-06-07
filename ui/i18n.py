@@ -162,6 +162,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "task.repeat": {"zh": "重复", "en": "Repeat"},
     "task.repeat_days_unit": {"zh": "天", "en": "days"},
     "task.repeat_mode_label": {"zh": "模式", "en": "Mode"},
+    "task.remind_time": {"zh": "定时提醒", "en": "Scheduled Reminder"},
+    "task.remind_time_label": {"zh": "提醒时间", "en": "Remind at"},
 
     # ── Date picker ────────────────────────────────────────
     "picker.weekdays": {"zh": "一二三四五六日", "en": "MTWTFSS"},
@@ -244,6 +246,8 @@ MESSAGES: dict[str, dict[str, str]] = {
     "notif.body.ongoing": {"zh": "任务进行中：{}", "en": "Ongoing: {}"},
     "notif.body.expiring": {"zh": "即将到期：{}", "en": "Expiring soon: {}"},
     "notif.body.expired": {"zh": "已过期：{}", "en": "Expired: {}"},
+    "notif.scheduled": {"zh": "定时提醒", "en": "Reminder"},
+    "notif.body.scheduled": {"zh": "提醒您：{}", "en": "Reminder: {}"},
 
     # ── Toast notifications ─────────────────────────────────
     "toast.task_added": {"zh": "已添加任务：{}", "en": "Task added: {}"},
