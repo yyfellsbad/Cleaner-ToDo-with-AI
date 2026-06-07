@@ -1379,3 +1379,21 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/stats_view.py` | 新增 `on_close` 参数 + 右上角关闭按钮 |
 | `ui/views/todo_view.py` | 传入 `_close_view` 回调给各子视图 |
 | `ui/i18n.py` | 新增 `settings.title`、`nav.settings` 翻译 |
+
+---
+
+## 48. 任务卡片操作按钮间距调整
+
+**问题：** 任务卡片右侧的删除按钮与 ReorderableListView 的排序手柄（≡）靠得太近，容易误触。
+
+**修复（task_item.py）：**
+- 操作按钮行间距从 `spacing=0` 增加到 `spacing=8`
+- 在删除按钮后面添加 `8px` 空白容器，与排序手柄保持距离
+
+---
+
+## 修改文件清单（2026-06-07 按钮间距）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/components/task_item.py` | 操作按钮间距调整（0→8）+ 删除按钮后添加空白间距 |

@@ -157,7 +157,7 @@ class Task(ft.Column):
         date_text, date_color, date_size = self._get_date_display()
 
         self._action_row = ft.Row(
-            spacing=0,
+            spacing=8,
             controls=[
                 ft.IconButton(
                     icon=ft.Icons.CREATE_OUTLINED,
@@ -171,6 +171,7 @@ class Task(ft.Column):
                     icon_size=18,
                     on_click=self.delete_clicked,
                 ),
+                ft.Container(width=8),  # 与排序手柄保持距离
             ],
         )
 
