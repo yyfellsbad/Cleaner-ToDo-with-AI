@@ -19,18 +19,44 @@ PERSONA_PRESETS: dict[str, str] = {
 
 class SettingsView(ft.Column):
     def __init__(self, theme_manager: ThemeManager, config_manager=None,
-                 on_lang_change=None, notification_service=None):
+                 on_lang_change=None, notification_service=None, on_close=None):
         super().__init__()
         self.tm = theme_manager
         self._cfg = config_manager
         self._notif = notification_service
         self._on_lang_change_cb = on_lang_change
+        self._on_close = on_close
         self.expand = True
         self.spacing = 0
         self._current_section = "appearance"
         self._build()
 
     def _build(self):
+        # ── 顶部导航栏 ──
+        def _on_close_click(e):
+            if self._on_close:
+                self._on_close(e)
+
+        top_bar = ft.Container(
+            padding=ft.Padding(16, 12, 16, 8),
+            content=ft.Row(
+                controls=[
+                    ft.Text(
+                        t("settings.title"),
+                        size=16,
+                        weight=ft.FontWeight.W_600,
+                    ),
+                    ft.Container(expand=True),
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        icon_size=22,
+                        tooltip=t("task.close"),
+                        on_click=_on_close_click,
+                    ),
+                ],
+            ),
+        )
+
         # ── 左侧导航 ──
         self._nav_items = {
             "appearance": (t("nav.appearance"), ft.Icons.PALETTE_OUTLINED),
@@ -86,6 +112,7 @@ class SettingsView(ft.Column):
         )
 
         self.controls = [
+            top_bar,
             ft.Row(
                 expand=True,
                 spacing=0,

@@ -1336,3 +1336,46 @@ i18n 更新：新增 `repeat.not_repeat`、`repeat.every_2_days`、`repeat.every
 | `ui/views/settings_view.py` | `ft.Button` API 修复 |
 | `README.md` | 更新教程功能描述 |
 | `optimize.md` | 追加本次优化记录 |
+
+---
+
+## 47. 子视图右上角关闭按钮
+
+**问题：** 点击日历、设置、统计等子视图后，新界面覆盖主界面，用户需要再次点击侧边栏按钮才能返回主界面，操作不直观，用户找不到返回方式。
+
+**实现：**
+
+### A. 日历视图（calendar_view.py）
+- 新增 `on_close` 回调参数
+- 在 header 右上角添加关闭按钮（`ft.Icons.CLOSE`），位于年快进按钮右侧
+- 点击关闭按钮触发 `on_close` 回调返回主界面
+
+### B. 设置视图（settings_view.py）
+- 新增 `on_close` 回调参数
+- 新增顶部导航栏，包含"设置"标题 + 右上角关闭按钮
+- 点击关闭按钮触发 `on_close` 回调返回主界面
+
+### C. 统计视图（stats_view.py）
+- 新增 `on_close` 回调参数
+- 在标题行右上角添加关闭按钮，位于刷新按钮右侧
+- 点击关闭按钮触发 `on_close` 回调返回主界面
+
+### D. 主视图（todo_view.py）
+- 创建各子视图时传入 `_close_view` 回调函数
+- `_close_view` 调用 `_sync_content_views("main")` 返回主界面
+
+### E. 国际化（i18n.py）
+- 新增 `"settings.title"` 翻译（zh: "设置", en: "Settings")
+- 新增 `"nav.settings"` 翻译（zh: "设置", en: "Settings")
+
+---
+
+## 修改文件清单（2026-06-07 关闭按钮）
+
+| 文件 | 变更类型 |
+|---|---|
+| `ui/views/calendar_view.py` | 新增 `on_close` 参数 + 右上角关闭按钮 |
+| `ui/views/settings_view.py` | 新增 `on_close` 参数 + 顶部导航栏 + 右上角关闭按钮 |
+| `ui/views/stats_view.py` | 新增 `on_close` 参数 + 右上角关闭按钮 |
+| `ui/views/todo_view.py` | 传入 `_close_view` 回调给各子视图 |
+| `ui/i18n.py` | 新增 `settings.title`、`nav.settings` 翻译 |

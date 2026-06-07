@@ -47,10 +47,11 @@ _ANIM_STEPS = 25       # 动画帧数
 class StatsView(ft.Column):
     """数据统计页面：概览卡片 + 环状图 + 今日待办 + 7 天趋势。"""
 
-    def __init__(self, task_service: TaskService, assessment_repo: DailyAssessmentRepo | None = None):
+    def __init__(self, task_service: TaskService, assessment_repo: DailyAssessmentRepo | None = None, on_close=None):
         super().__init__()
         self._task_service = task_service
         self._assessment_repo = assessment_repo
+        self._on_close = on_close
         self.expand = True
         self.spacing = 0
         self.scroll = ft.ScrollMode.AUTO
@@ -67,6 +68,10 @@ class StatsView(ft.Column):
         self._animated_items.clear()
         self._number_targets.clear()
 
+        def _on_close_click(e):
+            if self._on_close:
+                self._on_close(e)
+
         # 标题行
         header = ft.Row(
             controls=[
@@ -76,6 +81,12 @@ class StatsView(ft.Column):
                     icon=ft.Icons.REFRESH_ROUNDED,
                     tooltip=t("stats.refresh"),
                     on_click=self._on_refresh,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.CLOSE,
+                    icon_size=22,
+                    tooltip=t("task.close"),
+                    on_click=_on_close_click,
                 ),
             ],
         )

@@ -150,18 +150,22 @@ class TodoApp(ft.Column):
         from ui.views.stats_view import StatsView
         from ui.views.calendar_view import CalendarView
 
+        def _close_view(e):
+            self._sync_content_views("main")
+            self.update()
+
         # 重建设置视图
         self.settings_view.controls = [
-            SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif)
+            SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif, on_close=_close_view)
         ]
         # 重建统计视图
-        new_stats = StatsView(self.task_service, self._assessment_repo)
+        new_stats = StatsView(self.task_service, self._assessment_repo, on_close=_close_view)
         new_stats.visible = self.show_stats
         self._content_column.controls.remove(self.stats_view)
         self.stats_view = new_stats
         self._content_column.controls.append(self.stats_view)
         # 重建日历视图
-        new_cal = CalendarView(task_service=self.task_service)
+        new_cal = CalendarView(task_service=self.task_service, on_close=_close_view)
         new_cal.visible = self.show_calendar
         self._content_column.controls.remove(self.calendar_view)
         self.calendar_view = new_cal
@@ -731,6 +735,11 @@ class TodoApp(ft.Column):
             controls=[task_panel],
         )
 
+        # ── 关闭视图回调 ──
+        def _close_view(e):
+            self._sync_content_views("main")
+            self.update()
+
         # ── 设置视图 ──
         from ui.views.settings_view import SettingsView
 
@@ -738,19 +747,19 @@ class TodoApp(ft.Column):
             expand=True,
             spacing=12,
             visible=self.show_settings,
-            controls=[SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif)],
+            controls=[SettingsView(self.tm, self._config_manager, on_lang_change=self._rebuild_views, notification_service=self._notif, on_close=_close_view)],
         )
 
         # ── 统计视图 ──
         from ui.views.stats_view import StatsView
 
-        self.stats_view = StatsView(self.task_service, self._assessment_repo)
+        self.stats_view = StatsView(self.task_service, self._assessment_repo, on_close=_close_view)
         self.stats_view.visible = self.show_stats
 
         # ── 日历视图 ──
         from ui.views.calendar_view import CalendarView
 
-        self.calendar_view = CalendarView(task_service=self.task_service)
+        self.calendar_view = CalendarView(task_service=self.task_service, on_close=_close_view)
         self.calendar_view.visible = self.show_calendar
 
         self.expand = True

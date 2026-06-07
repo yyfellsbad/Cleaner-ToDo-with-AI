@@ -29,9 +29,10 @@ def _weekday_labels() -> list[str]:
 class CalendarView(ft.Column):
     """Full-page calendar view: month grid + task detail panel."""
 
-    def __init__(self, task_service: TaskService):
+    def __init__(self, task_service: TaskService, on_close=None):
         super().__init__()
         self._task_service = task_service
+        self._on_close = on_close
         self.expand = True
         self.spacing = 0
         self.scroll = ft.ScrollMode.AUTO
@@ -131,6 +132,10 @@ class CalendarView(ft.Column):
         # header
         self._month_label = ft.Text(size=18, weight=ft.FontWeight.W_700)
 
+        def _on_close_click(e):
+            if self._on_close:
+                self._on_close(e)
+
         header = ft.Container(
             padding=ft.Padding(20, 16, 20, 8),
             content=ft.Row(
@@ -162,6 +167,12 @@ class CalendarView(ft.Column):
                         icon=ft.Icons.FAST_FORWARD_ROUNDED,
                         icon_size=20,
                         on_click=self._next_year,
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.CLOSE,
+                        icon_size=22,
+                        tooltip=t("task.close"),
+                        on_click=_on_close_click,
                     ),
                 ],
             ),

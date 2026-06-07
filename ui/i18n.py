@@ -7,6 +7,10 @@ MESSAGES: dict[str, dict[str, str]] = {
     "nav.assistant": {"zh": "助手设置", "en": "Assistant"},
     "nav.notifications": {"zh": "通知", "en": "Notifications"},
     "nav.tutorial": {"zh": "教程", "en": "Tutorial"},
+    "nav.settings": {"zh": "设置", "en": "Settings"},
+
+    # ── Settings: title ────────────────────────────────────
+    "settings.title": {"zh": "设置", "en": "Settings"},
 
     # ── Settings: appearance ───────────────────────────────
     "settings.appearance.title": {"zh": "外观设置", "en": "Appearance"},
