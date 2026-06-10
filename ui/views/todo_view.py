@@ -486,31 +486,55 @@ class TodoApp(ft.Column):
                 spacing=0,
                 tight=True,
                 controls=[
-                    ft.Row(
-                        alignment=ft.MainAxisAlignment.END,
-                        controls=[
-                            ft.IconButton(
-                                icon=ft.Icons.CLOSE_ROUNDED,
-                                icon_size=16,
-                                tooltip=t("task.close"),
-                                on_click=self._close_picker,
-                            ),
-                        ],
-                    ),
+                    # ft.Row(
+                    #     alignment=ft.MainAxisAlignment.END,
+                    #     controls=[
+                    #         # 原关闭按钮
+                    #         # ft.IconButton(
+                    #         #     icon=ft.Icons.CLOSE_ROUNDED,
+                    #         #     icon_size=16,
+                    #         #     tooltip=t("task.close"),
+                    #         #     on_click=self._close_picker,
+                    #         # ),
+                    #         ft.FloatingActionButton(
+                    #             icon=ft.Icons.CLOSE_ROUNDED,
+                    #             mini=True,
+                    #             tooltip=t("task.close"),
+                    #             on_click=self._close_picker,
+                    #         ),
+                    #     ],
+                    #     height=50,
+                    # ),
                     self._new_task_picker,
                 ],
             ),
         )
 
+        # 描述输入框，关闭按钮，作为一行。值操作仍然作用于_new_task_desc，显示操作作用于_new_task_desc_row
         self._new_task_desc = ft.TextField(
             hint_text=t("task.desc_hint"),
             text_size=13,
+            expand=True,# 自适应拉伸
+            width=900,
             content_padding=ft.Padding(8, 6, 8, 6),
             border_radius=8,
             multiline=True,
             min_lines=1,
             max_lines=3,
+        )
+        self._new_task_action_btn = ft.FloatingActionButton(
+            icon=ft.Icons.CLOSE_ROUNDED,
+            mini=True,
+            tooltip=t("task.close"),
+            on_click=self._close_picker,
+        )
+        self._new_task_desc_row = ft.Row(
+            spacing=8,
             visible=False,
+            controls=[
+                self._new_task_action_btn, # 关闭按钮
+                self._new_task_desc,   # 描述输入框
+            ],
         )
 
         # ── 筛选按钮 ──
@@ -587,6 +611,7 @@ class TodoApp(ft.Column):
                             ft.FloatingActionButton(
                                 icon=ft.Icons.ADD,
                                 mini=True,
+                                tooltip=t("task.add_hint"),
                                 on_click=self.add_clicked,
                             ),
                             ft.Container(
@@ -599,7 +624,8 @@ class TodoApp(ft.Column):
                     # 日期选择面板（展开/收起）
                     self._new_task_picker_panel,
                     # 描述输入
-                    self._new_task_desc,
+                    # self._new_task_desc,
+                    self._new_task_desc_row,
                     # 筛选行
                     ft.Row(
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -1023,7 +1049,7 @@ class TodoApp(ft.Column):
             self.tasks.controls.append(task)
             self.new_task.value = ""
             self._new_task_desc.value = ""
-            self._new_task_desc.visible = False
+            self._new_task_desc_row.visible = False
             for chip in self._new_freq_chips.controls:
                 chip.selected = (chip.data == 0)
             self._new_custom_days.value = ""
@@ -1059,7 +1085,7 @@ class TodoApp(ft.Column):
         if panel.visible:
             # 关闭：先淡出再隐藏
             panel.opacity = 0
-            self._new_task_desc.visible = False
+            self._new_task_desc_row.visible = False
             self._new_repeat_row.visible = False
             self.update()
             await asyncio.sleep(0.25)
@@ -1068,7 +1094,7 @@ class TodoApp(ft.Column):
             # 打开：先显示再淡入
             panel.visible = True
             panel.opacity = 0
-            self._new_task_desc.visible = True
+            self._new_task_desc_row.visible = True
             # 重复行不自动显示，等选了持续日期后才出现
             self.update()
             await asyncio.sleep(0.05)
