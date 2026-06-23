@@ -19,3 +19,8 @@ Thumbs.db
 skills-lock.json
 CLAUDE.md
 data/tasks.db
+scripts/md_to_docx.py
+项目报告.md
+项目报告.docx
+项目报告.pdf
+pic/
